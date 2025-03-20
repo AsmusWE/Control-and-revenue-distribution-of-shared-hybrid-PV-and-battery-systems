@@ -1,37 +1,42 @@
 
 
 #************************************************************************
-# Food festival
 using JuMP
-using Gurobi
+using HiGHS
 using Plots
+
+
 #************************************************************************
 
 #************************************************************************
-coalition = [1, 2, 4]
-function solve_coalition(coalition)
+#coalition = [1, 2, 4]
+function solve_coalition(coalition, plotting = false, clients = 10)
     # NOTE: Repeating data loading inefficient, change for later implementation
     # Data
     time = range(1,stop=24)
     T = length(time)
-    clients = ["A", "B", "C", "D"]
-    C = length(clients)
+    C = clients
     demand = zeros(Float64, C, T)
     # Dummy demand data
     demand[1, :] = [5, 3, 4, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6]
     demand[2, :] = [6, 4, 5, 7, 8, 9, 6, 7, 8, 9, 6, 7, 8, 9, 6, 7, 8, 9, 6, 7, 8, 9, 6, 7]
     demand[3, :] = [7, 5, 6, 8, 9, 10, 7, 8, 9, 10, 7, 8, 9, 10, 7, 8, 9, 10, 7, 8, 9, 10, 7, 8]
     demand[4, :] = [8, 6, 7, 9, 10, 11, 8, 9, 10, 11, 8, 9, 10, 11, 8, 9, 10, 11, 8, 9, 10, 11, 8, 9]
+    demand[5, :] = [5, 4, 6, 7, 8, 9, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6]
+    demand[6, :] = [6, 5, 7, 8, 9, 10, 6, 7, 8, 9, 6, 7, 8, 9, 6, 7, 8, 9, 6, 7, 8, 9, 6, 7]
+    demand[7, :] = [7, 6, 8, 9, 10, 11, 7, 8, 9, 10, 7, 8, 9, 10, 7, 8, 9, 10, 7, 8, 9, 10, 7, 8]
+    demand[8, :] = [8, 7, 9, 10, 11, 12, 8, 9, 10, 11, 8, 9, 10, 11, 8, 9, 10, 11, 8, 9, 10, 11, 8, 9]
+    demand[9, :] = [9, 8, 10, 11, 12, 13, 9, 10, 11, 12, 9, 10, 11, 12, 9, 10, 11, 12, 9, 10, 11, 12, 9, 10]
+    demand[10, :] = [10, 9, 11, 12, 13, 14, 10, 11, 12, 13, 10, 11, 12, 13, 10, 11, 12, 13, 10, 11, 12, 13, 10, 11]
 
-    # NOTE: Ownership data is not relevant for this code to run alone, important for shapley implementation
     clientPVOwnership = zeros(Float32, C)
-    clientPVOwnership = [0.2, 0.3, 0.4, 0.1]
+    clientPVOwnership = [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
     clientBatteryOwnership = zeros(Float32, C)
-    clientBatteryOwnership = [0.1, 0.2, 0.5, 0.2]
+    clientBatteryOwnership = [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
 
     prod = zeros(Float64, T)
     # Dummy production data
-    prod = [10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 30, 28, 26, 24, 22, 20, 18, 16, 14, 12, 10, 8]*sum(clientPVOwnership[c] for c in coalition)
+    prod = 3*[10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 30, 28, 26, 24, 22, 20, 18, 16, 14, 12, 10, 8]*sum(clientPVOwnership[c] for c in coalition)
     P = length(prod)
 
     λ = zeros(Float64, T)
@@ -47,14 +52,17 @@ function solve_coalition(coalition)
         initSoC = 5
 
     #Connection data
-        gridConn = 50
+        gridConn = 100
 
     #************************************************************************
 
     #************************************************************************
     # Model
 
-    Bat = Model(Gurobi.Optimizer)
+    Bat = Model(HiGHS.Optimizer)
+
+    set_silent(Bat)
+    #set_optimizer_attribute(Bat, "OutputFlag", 0)
 
     # Charging rate
     @variable(Bat, 0<=Cha[1:T]<=chaLim, )
@@ -72,7 +80,7 @@ function solve_coalition(coalition)
 
     # Power balance constraint
     @constraint(Bat, [t=1:T],
-                sum(demand[c,t] for c=1:C) + Cha[t] <= prod[t] + Dis[t] + Grid[t])
+                sum(demand[c,t] for c=coalition) + Cha[t] <= prod[t] + Dis[t] + Grid[t])
 
     # Battery balance constraint
     @constraint(Bat, [t=1:T; t!=1],
@@ -85,29 +93,33 @@ function solve_coalition(coalition)
     #************************************************************************
     # Solve
     solution = optimize!(Bat)
-    println("Termination status: $(termination_status(Bat))")
+    #println("Termination status: $(termination_status(Bat))")
     #************************************************************************
 
     #************************************************************************
     if termination_status(Bat) == MOI.OPTIMAL
-        println("Optimal objective value: $(objective_value(Bat))")
-        println("solve time = $(solve_time(Bat))")
+        #println("Optimal objective value: $(objective_value(Bat))")
+        #println("solve time = $(solve_time(Bat))")
         
 
         # Extract the solution values
         soc_values = value.(SoC)
 
-        # Plot the State of Charge (SoC) over time
-        plot(time, soc_values, xlabel="Time (hours)", ylabel="State of Charge (SoC)", title="Battery State of Charge Over Time", legend=false)
-        savefig("SoC_over_time.png")
+        if plotting
+            # Plot the State of Charge (SoC) over time
+            plot(time, soc_values, xlabel="Time (hours)", ylabel="State of Charge (SoC)", title="Battery State of Charge Over Time", legend=false)
+            savefig("SoC_over_time.png")
 
-        grid_values = value.(Grid)
+            grid_values = value.(Grid)
 
-        # Plot the Grid exchange over time
-        plot(time, grid_values, xlabel="Time (hours)", ylabel="Grid Exchange", title="Grid Exchange Over Time", legend=false)
-        savefig("Grid_exchange_over_time.png")
+            # Plot the Grid exchange over time
+            plot(time, grid_values, xlabel="Time (hours)", ylabel="Grid Exchange", title="Grid Exchange Over Time", legend=false)
+            savefig("Grid_exchange_over_time.png")
+        end
+        return objective_value(Bat)
 
     else
         println("No optimal solution available")
     end
     #************************************************************************
+end

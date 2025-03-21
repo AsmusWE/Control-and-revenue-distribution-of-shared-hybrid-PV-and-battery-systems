@@ -17,20 +17,21 @@ function solve_coalition(coalition, demand, clientPVOwnership, clientBatteryOwne
     
     prod = pvProduction*sum(clientPVOwnership[c] for c in coalition)
 
-    λ = zeros(Float64, T)
-    λ = [50, 150, 100, 200, 250, 300, 50, 150, 100, 200, 250, 300, 50, 150, 100, 200, 250, 300, 50, 150, 100, 200, 250, 300]
+    priceImp = zeros(Float64, T)
+    priceImp = [50, 150, 100, 200, 250, 300, 50, 150, 100, 200, 250, 300, 50, 150, 100, 200, 250, 300, 50, 150, 100, 200, 250, 300]
+    priceExp = 0.5*priceImp
 
     #Battery data
-        batCap = 50*sum(clientBatteryOwnership[c] for c in coalition)
-        chaLim = 10*sum(clientBatteryOwnership[c] for c in coalition)
-        disLim = 10*sum(clientBatteryOwnership[c] for c in coalition)
+        batCap = 25*sum(clientBatteryOwnership[c] for c in coalition)
+        chaLim = 5*sum(clientBatteryOwnership[c] for c in coalition)
+        disLim = 5*sum(clientBatteryOwnership[c] for c in coalition)
         initSoC = initSoC*sum(clientBatteryOwnership[c] for c in coalition)
-        chaEff = 0.9
-        disEff = 0.9
-        initSoC = 5
+        chaEff = 0.95
+        disEff = 0.95
+        initSoC = 5*sum(clientBatteryOwnership[c] for c in coalition)
 
     #Connection data
-        gridConn = 100
+        gridConn = 1000
 
     #************************************************************************
 
@@ -51,14 +52,20 @@ function solve_coalition(coalition, demand, clientPVOwnership, clientBatteryOwne
     # State of charge at end of period
     @variable(Bat, 0<=SoC[1:T]<=batCap)
 
-    # Grid exchange, positive is import
-    @variable(Bat, -gridConn<=Grid[1:T]<=gridConn)
+    ## Grid exchange, positive is import
+    #@variable(Bat, -gridConn<=Grid[1:T]<=gridConn)
 
-    @objective(Bat, Min, sum(λ[t]*Grid[t] for t=1:T))
+    # Grid import
+    @variable(Bat, 0<=GridImp[1:T]<=gridConn)
+
+    # Grid export
+    @variable(Bat, 0<=GridExp[1:T]<=gridConn)
+
+    @objective(Bat, Min, sum(priceImp[t]*GridImp[t]-priceExp[t]*GridExp[t] for t=1:T))
 
     # Power balance constraint
     @constraint(Bat, [t=1:T],
-                sum(demand[c,t] for c=coalition) + Cha[t] <= prod[t] + Dis[t] + Grid[t])
+                sum(demand[c,t] for c=coalition) + Cha[t] + GridExp[t] <= prod[t] + Dis[t] + GridImp[t])
 
     # Battery balance constraint
     @constraint(Bat, [t=1:T; t!=1],

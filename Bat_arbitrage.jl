@@ -10,7 +10,7 @@ using Plots
 
 #************************************************************************
 #coalition = [1, 2, 4]
-function solve_coalition(coalition, demand, clientPVOwnership, clientBatteryOwnership, pvProduction, initSoC, plotting = false)
+function solve_coalition(coalition, demand, clientPVOwnership, clientBatteryOwnership, pvProduction, initSoC, batCap, plotting = false)
     # Data
     time = range(1,stop=24)
     T = length(time)
@@ -22,16 +22,16 @@ function solve_coalition(coalition, demand, clientPVOwnership, clientBatteryOwne
     priceExp = 0.5*priceImp
 
     #Battery data
-        batCap = 25*sum(clientBatteryOwnership[c] for c in coalition)
-        chaLim = 5*sum(clientBatteryOwnership[c] for c in coalition)
-        disLim = 5*sum(clientBatteryOwnership[c] for c in coalition)
+        batCap = batCap*sum(clientBatteryOwnership[c] for c in coalition)
+        C_Rate = 0.5
+        chaLim = batCap*C_Rate
+        disLim = batCap*C_Rate
         initSoC = initSoC*sum(clientBatteryOwnership[c] for c in coalition)
         chaEff = 0.95
         disEff = 0.95
-        initSoC = 5*sum(clientBatteryOwnership[c] for c in coalition)
 
     #Connection data
-        gridConn = 1000
+        gridConn = 1000000000
 
     #************************************************************************
 

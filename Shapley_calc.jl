@@ -1,5 +1,6 @@
 include("Bat_arbitrage.jl")
 using Dates
+using Plots
 
 
 function generate_coalitions(clients)
@@ -100,10 +101,11 @@ demand[9, :] = [9, 8, 10, 11, 12, 13, 9, 10, 11, 12, 9, 10, 11, 12, 9, 10, 11, 1
 demand[10, :] = [10, 9, 11, 12, 13, 14, 10, 11, 12, 13, 10, 11, 12, 13, 10, 11, 12, 13, 10, 11, 12, 13, 10, 11]
 
 clientPVOwnership = zeros(Float32, C)
-clientPVOwnership = [0.3, 0, 0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+clientPVOwnership = [0.2, 0, 0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.2]
 clientBatteryOwnership = zeros(Float32, C)
 clientBatteryOwnership = [0.1, 0.1, 0.1, 0.3, 0.0, 0.0, 0.1, 0.1, 0.1, 0.1]
-initSoC = 5
+initSoC = 0
+batCap = 25
 
 prod = zeros(Float64, T)
 # Dummy production data
@@ -112,21 +114,27 @@ prod = 3*[10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 30, 28, 26, 24, 22, 20
 start_time_generation = now()
 coalitions = generate_coalitions(clients)
 end_time_generation = now()
+single_client_coalitions_idx = [findfirst(x -> x == [client], coalitions) for client in clients]
 #println(coalitions)
 
 coalition_values = zeros(Float64, length(coalitions))
 start_time_optimize = now()
 for i in eachindex(coalitions)
-    coalition_values[i] = solve_coalition(coalitions[i], demand, clientPVOwnership, clientBatteryOwnership, prod, initSoC)
+    coalition_values[i] = solve_coalition(coalitions[i], demand, clientPVOwnership, clientBatteryOwnership, prod, initSoC, batCap)
 end
 end_time_optimize = now()
+
+# Finding value of clients operating solo without storage
+solo_no_storage_values = zeros(Float64, length(clients))
+for (idx, client) in enumerate(clients)
+    solo_no_storage_values[idx] = solve_coalition([client], demand, clientPVOwnership, clientBatteryOwnership, prod, 0, 0)
+end
 
 start_time_shapley = now()
 shapley_vals = shapley_value(clients, coalitions, coalition_values)
 end_time_shapley = now()
 
 check_stability(shapley_vals, coalition_values, coalitions)
-# TODO: Manually calculate shapley values and compare
 
 println("Time taken to generate all coalitions: ", end_time_generation - start_time_generation)
 println("Time taken to optimize all coalitions: ", end_time_optimize - start_time_optimize)
@@ -136,7 +144,26 @@ println("Time taken to calculate shapley values: ", end_time_shapley - start_tim
 println("Sum of Shapley values: ", sum(values(shapley_vals)))
 println("Discrepancy from grand coalition (should be 0): ", sum(values(shapley_vals)) - coalition_values[end])
 
-single_client_coalitions_idx = [findfirst(x -> x == [client], coalitions) for client in clients]
 println("Sum of single client coalition costs: ", sum(coalition_values[single_client_coalitions_idx]))
 println("Sum of grand coalition costs: ", coalition_values[end])
-println("Increase in revenue: ", (sum(coalition_values[single_client_coalitions_idx])-coalition_values[end])/coalition_values[end]*100, " %")
+println("Decrease in cost: ", (sum(coalition_values[single_client_coalitions_idx])-coalition_values[end])/coalition_values[end]*100, " %")
+
+
+# Extract single client coalition values
+single_client_values = [coalition_values[findfirst(x -> x == [client], coalitions)] for client in clients]
+
+# Extract shapley values in the same order as clients
+shapley_values = [shapley_vals[client] for client in clients]
+
+# Plot the decrease in cost per client
+decrease_in_cost_per_client = single_client_values .- shapley_values
+bar(clients, decrease_in_cost_per_client, xlabel="Client", ylabel="Decrease in Cost", title="Decrease in Cost per Client")
+# Display the first plot
+display(current())
+
+# Plot the decrease in cost per client compared to their solo no storage values
+decrease_in_cost_per_client_no_storage = transpose(solo_no_storage_values) .- shapley_values
+bar(clients, decrease_in_cost_per_client_no_storage, xlabel="Client", ylabel="Decrease in Cost", title="Decrease in Cost per Client Compared to Solo No Storage Values", legend=false, size=(800, 600), xticks=:auto, yticks=:auto, tickfont=font(8), guidefont=font(10), titlefont=font(12))
+# Display the second plot
+display(current())
+

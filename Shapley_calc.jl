@@ -19,17 +19,20 @@ end
 
 function shapley_value(clients, coalitions, coalition_values)
     n = length(clients)
-    shapley_vals = zeros(Float64, n)
+    shapley_vals = Dict()
+    for client in clients
+        shapley_vals[client] = 0.0
+    end
     
-    for i in 1:n
-        i_coalition = [c for c in coalitions if clients[i] in c]
+    for (idx,i) in enumerate(clients)
+        i_coalition = [c for c in coalitions if clients[idx] in c]
         # Looping through all coalitions containing client i
         for c in i_coalition
             S = length(c)
             # Finding the index of the coalition in the list of all coalitions
             c_idx = findfirst(x -> x == c, coalitions)
             # Creating the coalition that doesn't contain client i
-            c_without_i = filter(x -> x != clients[i], c)
+            c_without_i = filter(x -> x != clients[idx], c)
             c_without_i_idx = findfirst(x -> x == c_without_i, coalitions)
             # If the coalition without client i is empty, set value of empty coalition as 0
             if !isnothing(c_without_i_idx)
@@ -51,6 +54,10 @@ function check_stability(shapley_vals, coalition_values, coalitions)
             #println("Coalition ", c, " is unstable. As standalone coalition value: ", coalition_values[idx], " Shapley derived value: ", sum(shapley_vals[i] for i in c))
             instabilities[c] =  sum(shapley_vals[i] for i in c) - coalition_values[idx]
         end
+    end
+    if isempty(instabilities)
+        println("No instabilities found.")
+        return
     end
     max_instability = maximum(values(instabilities))
     max_instability_key = findfirst(x -> x == max_instability, instabilities)
@@ -120,8 +127,8 @@ println("Time taken to optimize all coalitions: ", end_time_optimize - start_tim
 println("Time taken to calculate shapley values: ", end_time_shapley - start_time_shapley)
 
 #println("Shapley values: ", shapley_vals)
-println("Sum of Shapley values: ", sum(shapley_vals))
-println("Discrepancy from grand coalition (should be 0): ", sum(shapley_vals) - coalition_values[end])
+println("Sum of Shapley values: ", sum(values(shapley_vals)))
+println("Discrepancy from grand coalition (should be 0): ", sum(values(shapley_vals)) - coalition_values[end])
 
 single_client_coalitions_idx = [findfirst(x -> x == [client], coalitions) for client in clients]
 println("Sum of single client coalition costs: ", sum(coalition_values[single_client_coalitions_idx]))

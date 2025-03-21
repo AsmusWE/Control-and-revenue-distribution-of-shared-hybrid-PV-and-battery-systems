@@ -1,4 +1,6 @@
 include("Bat_arbitrage.jl")
+using Dates
+
 
 function generate_coalitions(clients)
     # This function generates coalitions of clients by manipulating the bit representation of the coalitions
@@ -77,6 +79,10 @@ function check_stability(shapley_vals, coalition_values, coalitions)
 end
 
 
+all_clients = range(1, stop=10)
+T = 24
+C = length(all_clients)
+# Clients used for grand coalition
 clients = [1 2 3 4 5 6 7 8 9 10]
 #clients = [1 2 4]
 #clients = [1, 2, 3]

@@ -64,7 +64,7 @@ function check_stability(shapley_vals, coalition_values, coalitions)
     end
     max_instability = maximum(values(instabilities))
     max_instability_key = findfirst(x -> x == max_instability, instabilities)
-    println("Maximum instability is for coalition ", max_instability_key, " with value ", max_instability, " corresponding to operating in the grand coalition being ", max_instability/sum(shapley_vals[i] for i in max_instability_key)*100, "% more expensive than operating in this coalition")
+    println("Maximum instability is for coalition ", max_instability_key, " with value ", max_instability, " corresponding to operating in the grand coalition being ", max_instability/coalition_values[findfirst(x -> x == max_instability_key, coalitions)]*100, "% more expensive than operating in this coalition")
     if !isnothing(max_instability_key)
         for client in max_instability_key
             solo_coalition_idx = findfirst(x -> x == [client], coalitions)
@@ -111,9 +111,9 @@ prod = zeros(Float64, T)
 # Dummy production data
 prod = 3*[10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 30, 28, 26, 24, 22, 20, 18, 16, 14, 12, 10, 8]
 
-start_time_generation = now()
+#start_time_generation = now()
 coalitions = generate_coalitions(clients)
-end_time_generation = now()
+#end_time_generation = now()
 single_client_coalitions_idx = [findfirst(x -> x == [client], coalitions) for client in clients]
 #println(coalitions)
 
@@ -136,7 +136,7 @@ end_time_shapley = now()
 
 check_stability(shapley_vals, coalition_values, coalitions)
 
-println("Time taken to generate all coalitions: ", end_time_generation - start_time_generation)
+#println("Time taken to generate all coalitions: ", end_time_generation - start_time_generation)
 println("Time taken to optimize all coalitions: ", end_time_optimize - start_time_optimize)
 println("Time taken to calculate shapley values: ", end_time_shapley - start_time_shapley)
 
@@ -146,7 +146,7 @@ println("Discrepancy from grand coalition (should be 0): ", sum(values(shapley_v
 
 println("Sum of single client coalition costs: ", sum(coalition_values[single_client_coalitions_idx]))
 println("Sum of grand coalition costs: ", coalition_values[end])
-println("Decrease in cost: ", (sum(coalition_values[single_client_coalitions_idx])-coalition_values[end])/coalition_values[end]*100, " %")
+println("Decrease in cost: ", (sum(coalition_values[single_client_coalitions_idx])-coalition_values[end])/sum(coalition_values[single_client_coalitions_idx])*100, " %")
 
 
 # Extract single client coalition values

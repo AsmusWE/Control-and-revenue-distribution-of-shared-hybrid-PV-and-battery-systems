@@ -142,7 +142,7 @@ println("Time taken to calculate shapley values: ", end_time_shapley - start_tim
 
 #println("Shapley values: ", shapley_vals)
 println("Sum of Shapley values: ", sum(values(shapley_vals)))
-println("Discrepancy from grand coalition (should be 0): ", sum(values(shapley_vals)) - coalition_values[end])
+println("Discrepancy from grand coalition cost (should be 0): ", sum(values(shapley_vals)) - coalition_values[end])
 
 println("Sum of single client coalition costs: ", sum(coalition_values[single_client_coalitions_idx]))
 println("Sum of grand coalition costs: ", coalition_values[end])
@@ -157,13 +157,13 @@ shapley_values = [shapley_vals[client] for client in clients]
 
 # Plot the decrease in cost per client
 decrease_in_cost_per_client = single_client_values .- shapley_values
-bar(clients, decrease_in_cost_per_client, xlabel="Client", ylabel="Decrease in Cost", title="Decrease in Cost per Client")
+bar(clients, decrease_in_cost_per_client, xlabel="Client", ylabel="Decrease in Cost", title="Decrease in Cost per Client Shapley distribution")
 # Display the first plot
 display(current())
 
 # Plot the decrease in cost per client compared to their solo no storage values
-decrease_in_cost_per_client_no_storage = transpose(solo_no_storage_values) .- shapley_values
-bar(clients, decrease_in_cost_per_client_no_storage, xlabel="Client", ylabel="Decrease in Cost", title="Decrease in Cost per Client Compared to Solo No Storage Values", legend=false, size=(800, 600), xticks=:auto, yticks=:auto, tickfont=font(8), guidefont=font(10), titlefont=font(12))
+#decrease_in_cost_per_client_no_storage = transpose(solo_no_storage_values) .- shapley_values
+#bar(clients, decrease_in_cost_per_client_no_storage, xlabel="Client", ylabel="Decrease in Cost", title="Decrease in Cost per Client Compared to Solo No Storage Values", legend=false, size=(800, 600), xticks=:auto, yticks=:auto, tickfont=font(8), guidefont=font(10), titlefont=font(12))
 # Display the second plot
-display(current())
+#display(current())
 

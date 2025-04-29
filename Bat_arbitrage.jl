@@ -10,7 +10,7 @@ using Plots
 
 #************************************************************************
 #coalition = [1, 2, 4]
-function solve_coalition(coalition, demand, clientPVOwnership, clientBatteryOwnership, pvProduction, initSoC, batCap, plotting = false)
+function solve_coalition(coalition, demand, clientPVOwnership, clientBatteryOwnership, pvProduction, initSoC, batCap, plotting = false, distribution = "Shapley")
     # Data
     time = range(1,stop=24)
     T = length(time)
@@ -61,10 +61,10 @@ function solve_coalition(coalition, demand, clientPVOwnership, clientBatteryOwne
     # Grid export
     @variable(Bat, 0<=GridExp[1:T]<=gridConn)
 
-    @objective(Bat, Min, sum(priceImp[t]*GridImp[t]-priceExp[t]*GridExp[t] for t=1:T))
+    @objective(Bat, Max, -(sum(priceImp[t]*GridImp[t]-priceExp[t]*GridExp[t] for t=1:T)))
 
     # Power balance constraint
-    @constraint(Bat, [t=1:T],
+    @constraint(Bat, powerBal[t=1:T],
                 sum(demand[c,t] for c=coalition) + Cha[t] + GridExp[t] <= prod[t] + Dis[t] + GridImp[t])
 
     # Battery balance constraint
@@ -101,7 +101,12 @@ function solve_coalition(coalition, demand, clientPVOwnership, clientBatteryOwne
             plot(time, grid_values, xlabel="Time (hours)", ylabel="Grid Exchange", title="Grid Exchange Over Time", legend=false)
             savefig("Grid_exchange_over_time.png")
         end
-        return objective_value(Bat)
+        if distribution == "Shapley"
+            return objective_value(Bat)
+        elseif distribution == "Uniform"
+            clearingPrice = dual.powerBal
+            return [objective_value(Bat), clearingPrice, ]
+        end
 
     else
         println("No optimal solution available")

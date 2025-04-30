@@ -33,7 +33,7 @@ function shapley_value(clients, coalitions, coalition_values)
     return shapley_vals
 end
 
-clients, demand, clientPVOwnership, clientBatteryOwnership, prod, initSoC, batCap = load_data()
+systemData = load_data()
 
 #start_time_generation = now()
 coalitions = generate_coalitions(clients)
@@ -45,14 +45,16 @@ single_client_coalitions_idx = [findfirst(x -> x == [client], coalitions) for cl
 coalition_values = Dict{Vector{Int}, Float64}() # Initialize as a dictionary
 start_time_optimize = now()
 for coalition in coalitions
-    coalition_values[coalition] = solve_coalition(coalition, demand, clientPVOwnership, clientBatteryOwnership, prod, initSoC, batCap)
+    coalition_values[coalition] = solve_coalition(coalition, systemData)
 end
 end_time_optimize = now()
 
 # Finding value of clients operating solo without storage
 solo_no_storage_values = zeros(Float64, length(clients))
+systemData["initSoC"] = 0
+systemData["batCap"] = 0
 for (idx, client) in enumerate(clients)
-    solo_no_storage_values[idx] = solve_coalition([client], demand, clientPVOwnership, clientBatteryOwnership, prod, 0, 0)
+    solo_no_storage_values[idx] = solve_coalition([client], systemData)
 end
 
 start_time_shapley = now()
@@ -73,7 +75,7 @@ sum_single_client_costs = sum(coalition_values[[client]] for client in clients)
 
 println("Sum of single client coalition costs: ", sum_single_client_costs)
 println("Sum of grand coalition costs: ", coalition_values[grand_coalition])
-println("Decrease in cost: ", (sum(coalition_values[coalitions[i]] for i in single_client_coalitions_idx)-coalition_values[grand_coalition])/sum(coalition_values[coalitions[i]] for i in single_client_coalitions_idx)*100, " %")
+println("Change in profit: ", (sum(coalition_values[coalitions[i]] for i in single_client_coalitions_idx)-coalition_values[grand_coalition])/sum(coalition_values[coalitions[i]] for i in single_client_coalitions_idx)*100, " %")
 
 # Extract single client coalition values
 single_client_values = [coalition_values[[client]] for client in clients]

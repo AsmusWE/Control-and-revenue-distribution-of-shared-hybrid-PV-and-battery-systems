@@ -29,7 +29,7 @@ function check_stability(payoffs, coalition_values, coalitions)
     # Checks if the value of a coalition is larger than their reward as part of the grand coalition
     instabilities = Dict()
     for c in coalitions
-        if coalition_values[c] > sum(payoffs[i] for i in c)
+        if coalition_values[c] > sum(payoffs[i] for i in c)+0.01 # Adding a small tolerance to avoid floating point errors
             instabilities[c] = coalition_values[c] - sum(payoffs[i] for i in c) 
         end
     end
@@ -56,8 +56,8 @@ function load_data()
     # Clients used for grand coalition
     clients = [1 2 3 4 5 6 7 8 9 10]
 
-    #clients = [1 2 4]
-    #clients = [1, 2, 3]
+    #clients = [1 2]
+    #clients = [1 2 3]
     demand = zeros(Float64, C, T)
     # Dummy demand data
     demand[1, :] = [5, 3, 4, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6, 7, 8, 5, 6]
@@ -72,7 +72,7 @@ function load_data()
     demand[10, :] = [10, 9, 11, 12, 13, 14, 10, 11, 12, 13, 10, 11, 12, 13, 10, 11, 12, 13, 10, 11, 12, 13, 10, 11]
 
     clientPVOwnership = zeros(Float32, C)
-    clientPVOwnership = [0.2, 0, 0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.2]
+    clientPVOwnership = [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
     clientBatteryOwnership = zeros(Float32, C)
     clientBatteryOwnership = [0.1, 0.1, 0.1, 0.3, 0.0, 0.0, 0.1, 0.1, 0.1, 0.1]
     initSoC = 0
@@ -80,7 +80,11 @@ function load_data()
 
     prod = zeros(Float64, T)
     # Dummy production data
-    prod = 3*[10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 30, 28, 26, 24, 22, 20, 18, 16, 14, 12, 10, 8]
+    prod = 4*[10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 30, 28, 26, 24, 22, 20, 18, 16, 14, 12, 10, 8]
 
-    return clients, demand, clientPVOwnership, clientBatteryOwnership, prod, initSoC, batCap
+    priceImp = zeros(Float64, T)
+    priceImp = 0.5*[50, 150, 100, 200, 250, 300, 50, 150, 100, 200, 250, 300, 50, 150, 100, 200, 250, 300, 50, 150, 100, 200, 250, 300]
+    priceExp = 0.5*priceImp
+    systemData = Dict("demand" => demand, "clientPVOwnership" => clientPVOwnership, "clientBatteryOwnership" => clientBatteryOwnership, "pvProduction" => prod, "initSoC" => initSoC, "batCap" => batCap, "priceImp" => priceImp, "priceExp" => priceExp)
+    return systemData
 end

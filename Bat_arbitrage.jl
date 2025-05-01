@@ -38,7 +38,6 @@ function solve_coalition(coalition, systemData, model = "Simple" ,plotting = fal
     #Connection data
     # Inverter size assumed owned according to PV ownership to preserve super-additivity
         gridConn = 11.3*sum(clientPVOwnership[c] for c in coalition) #MW
-        #gridConn = 11.3*100
     #************************************************************************
 
     #************************************************************************

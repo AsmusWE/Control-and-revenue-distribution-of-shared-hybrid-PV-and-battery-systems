@@ -34,6 +34,7 @@ function shapley_value(clients, coalitions, coalition_values)
 end
 
 systemData = load_data()
+clients = systemData["clients"]
 
 #start_time_generation = now()
 coalitions = generate_coalitions(clients)
@@ -73,8 +74,8 @@ println("Discrepancy from grand coalition cost (should be 0): ", sum(values(shap
 
 sum_single_client_costs = sum(coalition_values[[client]] for client in clients)
 
-println("Sum of single client coalition costs: ", sum_single_client_costs)
-println("Sum of grand coalition costs: ", coalition_values[grand_coalition])
+println("Sum of single client coalition revenue: ", sum_single_client_costs)
+println("Sum of grand coalition revenue: ", coalition_values[grand_coalition])
 println("Change in profit: ", (sum(coalition_values[coalitions[i]] for i in single_client_coalitions_idx)-coalition_values[grand_coalition])/sum(coalition_values[coalitions[i]] for i in single_client_coalitions_idx)*100, " %")
 
 # Extract single client coalition values

@@ -36,8 +36,9 @@ function solve_coalition(coalition, systemData, model = "Simple" ,plotting = fal
         initSoC = initSoC*sum(clientBatteryOwnership[c] for c in coalition)
 
     #Connection data
-        gridConn = 1000000000
-
+    # Inverter size assumed owned according to PV ownership to preserve super-additivity
+        gridConn = 11.3*sum(clientPVOwnership[c] for c in coalition) #MW
+        #gridConn = 11.3*100
     #************************************************************************
 
     #************************************************************************
@@ -75,20 +76,25 @@ function solve_coalition(coalition, systemData, model = "Simple" ,plotting = fal
 
     # Grid import
     if model == "Simple"
-        @variable(Bat, 0<=GridImp[1:T]<=gridConn)
+        @variable(Bat, 0<=GridImp[1:T])
     else
         @variable(Bat, 0<=GridImp[1:T,c in coalition])
     end
 
     # Grid export
     if model == "Simple"
-        @variable(Bat, 0<=GridExp[1:T]<=gridConn)
+        @variable(Bat, 0<=GridExp[1:T])
     else
         @variable(Bat, 0<=GridExp[1:T,c in coalition])
     end
 
     # Assigned production
-    if model != "Simple"
+    if model == "Simple"
+        @variable(Bat, 0<=prodGiven[1:T])
+        for t in 1:T
+            @constraint(Bat, prodGiven[t] <= prod[t])
+        end
+    else
         @variable(Bat, 0<=prodGiven[1:T,c in coalition])
     end
 
@@ -108,7 +114,7 @@ function solve_coalition(coalition, systemData, model = "Simple" ,plotting = fal
     # Power balance constraint
     if model == "Simple"
         @constraint(Bat, powerBal[t=1:T],
-                    sum(demand[c,t] for c=coalition) + Cha[t] + GridExp[t] <= prod[t] + Dis[t] + GridImp[t])
+                    sum(demand[c,t] for c=coalition) + Cha[t] + GridExp[t] <= prodGiven[t] + Dis[t] + GridImp[t])
     else
         @constraint(Bat, powerBal[t=1:T,c in coalition],
                     demand[c,t] + Cha[t,c] + GridExp[t,c] <= prodGiven[t,c] + Dis[t,c] + GridImp[t,c])
@@ -127,12 +133,19 @@ function solve_coalition(coalition, systemData, model = "Simple" ,plotting = fal
                     initSoC + sum(Cha[1,c] for c in coalition)*chaEff - sum(Dis[1,c] for c in coalition)/disEff == SoC[1])
     end
 
+    # Grid Connection modelling
+    if model == "Simple"
+        @constraint(Bat, [t=1:T],
+                    prodGiven[t]+Dis[t]-Cha[t] <= gridConn)
+    else
+        @constraint(Bat, [t=1:T], 
+                    sum(prodGiven[t, c] + Dis[t, c] - Cha[t, c] for c in coalition) <= gridConn)
+    end
+
     # Collective limits 
     if model != "Simple"
         @constraint(Bat, [t=1:T], sum(Cha[t,c] for c in coalition) <= chaLim)
         @constraint(Bat, [t=1:T], sum(Dis[t,c] for c in coalition) <= disLim)
-        @constraint(Bat, [t=1:T], sum(GridImp[t,c] for c in coalition) <= gridConn)
-        @constraint(Bat, [t=1:T], sum(GridExp[t,c] for c in coalition) <= gridConn)
         @constraint(Bat, [t=1:T], sum(prodGiven[t,c] for c in coalition) <= prod[t])
     end
     #************************************************************************

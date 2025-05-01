@@ -12,18 +12,19 @@ function VCG_tax(clients, coalition_val, import_util, export_util)
         grand_coalition_value_minus_i = sum(export_util[grand_coalition][c] for c in grand_coalition if c!=i) - sum(import_util[grand_coalition][c] for c in grand_coalition if c!=i)
         coalition_without_i = filter(x -> x != clients[idx], grand_coalition)
         coalition_value_without_i = coalition_val[coalition_without_i]
-        VCG_taxes[i] = coalition_value_without_i-grand_coalition_value_minus_i 
+        VCG_taxes[i] = (coalition_value_without_i-grand_coalition_value_minus_i)
         #println("Client ", i, " VCG tax: ", VCG_taxes[i], " (Grand coalition value minus i: ", grand_coalition_value_minus_i, ", Coalition value without i: ", coalition_value_without_i, ")")
     end
     return VCG_taxes
 end
 
-only_VCG = false # Set to true to only calculate coalitions needed for VCG
+only_VCG = true # Set to true to only calculate coalitions needed for VCG
 # Needs to be false to check for stability
 
 systemData = load_data()
 
 #start_time_generation = now()
+clients = systemData["clients"]
 coalitions = generate_coalitions(clients, only_VCG)
 grand_coalition = vec(clients)
 #end_time_generation = now()

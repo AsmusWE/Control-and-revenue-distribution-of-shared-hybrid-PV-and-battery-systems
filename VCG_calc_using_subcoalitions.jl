@@ -21,7 +21,7 @@ end
 only_VCG = false # Set to true to only calculate coalitions needed for VCG
 # Needs to be false to check for stability
 
-systemData = load_data()
+systemData = test_load_data()
 
 #start_time_generation = now()
 clients = systemData["clients"]

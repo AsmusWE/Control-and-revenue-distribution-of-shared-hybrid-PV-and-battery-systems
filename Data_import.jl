@@ -4,23 +4,27 @@ using DataFrames
 function load_data(batCap = 100.0, initSoC = 0.0)
     demand = CSV.read("Data/consumption_data.csv", DataFrame)
 
-    clientPVOwnership = DataFrame(
-    Customer = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y"],
-    a_ppa_pct = [0.143, 0.006, 0.009, 0.007, 0.005, 0.003, 0.143, 0.014, 0.05, 0.003, 0.004, 0.021, 0.004, 0.001, 0.003, 0.003, 0.028, 0.002, 0.041, 0.002, 0.007, 0.002, 0.001, 0.001, 0.01],
-    c_ppa_consumption_pct = [0.17, 0.47, 0.28, 0.33, 1.15, 1.19, 0.33, 0.33, 0.36, 0.57, 0.12, 0.53, 0.33, 0.08, 0.36, 0.38, 0.05, 1.47, 0.50, 0.30, 0.25, 0.67, 0.02, 0.16, 0.34],
-    bidding_zone = ["DK-DK1", "DK-DK1", "DK-DK1", "DK-DK1", "DK-DK1", "DK-DK1", "DK-DK1", "DK-DK1", "DK-DK1", "DK-DK1", "DK-DK1", "DK-DK1", "DK-DK1", "DK-DK1", "DK-DK1", "DK-DK1", "DK-DK1", "DK-DK1", "DK-DK1", "DK-DK1", "DK-DK1", "DK-DK1", "DK-DK1", "DK-DK1", "DK-DK1"],
-    #c_ppa_estimated_yearly_gwh = [2, 0.09, 0.125, 0.1, 0.07, 0.035, 2, 0.2, 0.7, 0.037, 0.056, 0.294, 0.014, 0.042, 0.392, 0.028, 0.574, 0.028, 0.096, 0.028, 0.014, 0.014, 0.14]
-)
+    clientPVOwnership = Dict(
+        "A" => 0.143, "B" => 0.006, "C" => 0.009, "D" => 0.007, "E" => 0.005, 
+        "F" => 0.003, "G" => 0.143, "H" => 0.014, "I" => 0.05, "J" => 0.003, 
+        "K" => 0.004, "L" => 0.021, "M" => 0.004, "N" => 0.001, "O" => 0.003, 
+        "P" => 0.003, "Q" => 0.028, "R" => 0.002, "S" => 0.041, "T" => 0.002, 
+        "U" => 0.007, "V" => 0.002, "W" => 0.001, "X" => 0.001, "Y" => 0.01
+    )
     clientBatteryOwnership = clientPVOwnership
+
     pvProduction = CSV.read("Data/ProductionMunicipalityHour.csv", DataFrame; decimal=',')
     priceData = CSV.read("Data/Elspotprices.csv", DataFrame; decimal=',')
 
     # Extract specific columns or preprocess as needed
     priceImp = priceData[:, :SpotPriceDKK]
+    # Setting negative prices to zero
+    priceImp = max.(priceImp, 0)
     # Elafgift virksomhed 0,4 oere/kWh - 4 dkk/mWh
     # Raadighedstarif antaget b-hoej 8,75 oere/kWh - 87,5 dkk/mWh
-    priceExp = priceData[:, :SpotPriceDKK] .+ 4.0 .+ 87.5 # Adjust as needed
-    clients = unique(clientPVOwnership[:, :Customer]) # Assuming a ClientID column exists
+    priceExp = priceImp .- 4.0 .- 87.5 # Adjust as needed
+
+    clients = keys(clientPVOwnership)
 
     # Create a new DataFrame that combines prices and PV production
     # Trim the data to match the shortest length
@@ -29,13 +33,34 @@ function load_data(batCap = 100.0, initSoC = 0.0)
     pvProduction = pvProduction[1:min_length, :]
     demand = demand[1:min_length, :]
 
+    # Rescale PV production to align with plant size 
+    plant_size = 14.0 # MW
+    old_plant_size = maximum(pvProduction[:, :SolarMWh])
+    pvProduction[:, :SolarMWh] .*= plant_size / old_plant_size
+
     # Create a new DataFrame that combines prices, PV production, and demand
     price_prod_demand_df = DataFrame(
-        SpotPriceDKK = priceData[:, :SpotPriceDKK],
+        PriceImp = priceImp[1:min_length],
         PriceExp = priceExp[1:min_length],
         PVProduction = pvProduction[:, :SolarMWh], 
-        Demand = demand[:, clients] 
     )
+    for client in clients
+        price_prod_demand_df[!, Symbol(client)] = demand[:, client]
+    end
+
+    missing_data_counts = Dict()
+    for client in clients
+        missing_data_counts[client] = count(ismissing, demand[:, client])
+    end
+    clients_without_missing_data = filter(client -> missing_data_counts[client] == 0, clients)
+    println("Clients without missing data: ", clients_without_missing_data)
+
+    # Dropping columns with missing values
+    #demand = select!(demand, Not([:"C",:"P",:"B",:"M",:"D",:"E",:"R"]))
+    
+
+    println("Missing data points for each client:")
+    println(missing_data_counts)
 
     systemData = Dict(
         "demand" => demand,
@@ -49,6 +74,9 @@ function load_data(batCap = 100.0, initSoC = 0.0)
         "clients" => clients,
         "price_prod_demand_df" => price_prod_demand_df
     )
-
-    return systemData
+    return systemData, clients_without_missing_data
 end
+
+
+
+    

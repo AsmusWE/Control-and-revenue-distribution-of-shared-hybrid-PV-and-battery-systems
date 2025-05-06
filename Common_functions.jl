@@ -49,7 +49,8 @@ function check_stability(payoffs, coalition_values, coalitions)
     #end
 end
 
-function load_data()
+
+function test_load_data()
     all_clients = range(1, stop=10)
     T = 24
     C = length(all_clients)

@@ -54,10 +54,10 @@ function load_data()
     T = 24
     C = length(all_clients)
     # Clients used for grand coalition
-    #clients = [1 2 3 4 5 6 7 8 9 10]
+    clients = [1 2 3 4 5 6 7 8 9 10]
 
     #clients = [1 2]
-    clients = [1 2 3 4 5 6 7]
+    #clients = [1 2 3 4 5 6 7]
     demand = zeros(Float64, C, T)
     # Dummy demand data
     demand[1, :] = 1 * [0.5, 0.3, 0.4, 0.6, 0.7, 0.8, 0.5, 0.6, 0.7, 0.8, 0.5, 0.6, 0.7, 0.8, 0.5, 0.6, 0.7, 0.8, 0.5, 0.6, 0.7, 0.8, 0.5, 0.6]
@@ -73,11 +73,13 @@ function load_data()
     demand = demand.*1.5
 
     clientPVOwnership = zeros(Float32, C)
-    clientPVOwnership =         [0.1, 0.1, 0.1, 0.1, 0.0, 0.3, 0.0, 0.1, 0.1, 0.1]
+    #clientPVOwnership =         [0.1, 0.1, 0.1, 0.1, 0.0, 0.3, 0.0, 0.1, 0.1, 0.1]
+    clientPVOwnership =    [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
     clientBatteryOwnership = zeros(Float32, C)
-    clientBatteryOwnership =    [0.1, 0.1, 0.1, 0.3, 0.0, 0.0, 0.1, 0.1, 0.1, 0.1]
+    #clientBatteryOwnership =    [0.1, 0.1, 0.1, 0.3, 0.0, 0.0, 0.1, 0.1, 0.1, 0.1]
+    clientBatteryOwnership = [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
     initSoC = 0
-    batCap = 200
+    batCap = 20
 
     prod = zeros(Float64, T)
     # Dummy production data MW, plant size: 14 MW
@@ -89,3 +91,4 @@ function load_data()
     systemData = Dict("demand" => demand, "clientPVOwnership" => clientPVOwnership, "clientBatteryOwnership" => clientBatteryOwnership, "pvProduction" => prod, "initSoC" => initSoC, "batCap" => batCap, "priceImp" => priceImp, "priceExp" => priceExp, "clients" => clients)
     return systemData
 end
+

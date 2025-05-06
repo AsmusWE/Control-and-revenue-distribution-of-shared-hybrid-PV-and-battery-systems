@@ -4,12 +4,14 @@ using DataFrames
 function load_data(batCap = 100.0, initSoC = 0.0)
     demand = CSV.read("Data/consumption_data.csv", DataFrame)
 
+    # NOTE: Added client Z who is the PV owner
     clientPVOwnership = Dict(
         "A" => 0.143, "B" => 0.006, "C" => 0.009, "D" => 0.007, "E" => 0.005, 
         "F" => 0.003, "G" => 0.143, "H" => 0.014, "I" => 0.05, "J" => 0.003, 
         "K" => 0.004, "L" => 0.021, "M" => 0.004, "N" => 0.001, "O" => 0.003, 
         "P" => 0.003, "Q" => 0.028, "R" => 0.002, "S" => 0.041, "T" => 0.002, 
-        "U" => 0.007, "V" => 0.002, "W" => 0.001, "X" => 0.001, "Y" => 0.01
+        "U" => 0.007, "V" => 0.002, "W" => 0.001, "X" => 0.001, "Y" => 0.01,
+        "Z" => 0.487
     )
     clientBatteryOwnership = clientPVOwnership
 
@@ -32,6 +34,7 @@ function load_data(batCap = 100.0, initSoC = 0.0)
     priceData = priceData[1:min_length, :]
     pvProduction = pvProduction[1:min_length, :]
     demand = demand[1:min_length, :]
+    demand[!, :Z] .= 0
 
     # Rescale PV production to align with plant size 
     plant_size = 14.0 # MW

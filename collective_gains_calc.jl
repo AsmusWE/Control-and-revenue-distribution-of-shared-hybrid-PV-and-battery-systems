@@ -15,8 +15,8 @@ clients_array = collect(clients)
 #clients_without_missing_data_indexes = [findfirst(isequal(client), clients_array) for client in clients_without_missing_data]
 
 for client in clients_without_missing_data
-    avg_prod_share = systemData["clientPVOwnership"][client] * sum(systemData["price_prod_demand_df"][!,"PVProduction"])/17502
-    println("Average demand for client ", client, ": ", sum(systemData["price_prod_demand_df"][!, client])/17502, " Average production share: ", avg_prod_share)
+    avg_prod_share = systemData["clientPVOwnership"][client] * sum(systemData["price_prod_demand_df"][!,"PVProduction"])/length(systemData["price_prod_demand_df"][!,"PVProduction"])
+    println("Average demand for client ", client, ": ", sum(systemData["price_prod_demand_df"][!, client])/length(systemData["price_prod_demand_df"][!, client]), " Average production share: ", avg_prod_share)
     
 end
 
@@ -69,12 +69,12 @@ individual_operation_improvement = individual_operation_sum .- baseline_individu
 #collective_operation_improvement = collective_operation_improvement .+ collective_operation_improvement[1]
 #individual_operation_improvement = individual_operation_improvement .+ individual_operation_improvement[1]
 
-#plot(battery_sizes, collective_operation_improvement, label="Collective Operation Improvement", lw=2, marker=:o)
-#plot!(battery_sizes, individual_operation_improvement, label="Individual Operation Improvement", lw=2, marker=:s)
-#xlabel!("Battery Size (MWh)")
-#ylabel!("Operation Sum")
-#title!("Operation Sum vs Battery Size")
-#display(current())
+plot(battery_sizes, collective_operation_improvement, label="Collective Operation Improvement", lw=2, marker=:o)
+plot!(battery_sizes, individual_operation_improvement, label="Individual Operation Improvement", lw=2, marker=:s)
+xlabel!("Battery Size (MWh)")
+ylabel!("Operation Sum")
+title!("Operation Sum vs Battery Size")
+display(current())
 
 # Calculating percentage difference between collective and individual operation improvements
 percentage_difference = 100 .* (collective_operation_improvement .- individual_operation_improvement) ./ individual_operation_improvement

@@ -18,7 +18,7 @@ function VCG_tax(clients, coalition_val, import_util, export_util)
     return VCG_taxes
 end
 
-only_VCG = true # Set to true to only calculate coalitions needed for VCG
+only_VCG = false # Set to true to only calculate coalitions needed for VCG
 # Needs to be false to check for stability
 
 systemData = load_data()

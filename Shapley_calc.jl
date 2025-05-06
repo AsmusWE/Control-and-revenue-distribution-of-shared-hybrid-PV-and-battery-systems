@@ -57,6 +57,19 @@ systemData["batCap"] = 0
 for (idx, client) in enumerate(clients)
     solo_no_storage_values[idx] = solve_coalition([client], systemData)
 end
+sum_single_client_costs = sum(coalition_values[[client]] for client in clients)
+
+systemData["pvProduction"] = systemData["pvProduction"]*0
+solo_no_storage_no_pv_values = zeros(Float64, length(clients))
+for (idx, client) in enumerate(clients)
+    solo_no_storage_no_pv_values[idx] = solve_coalition([client], systemData)
+end
+baseline_cost = sum(solo_no_storage_no_pv_values)
+collective_improvement = coalition_values[grand_coalition] - baseline_cost
+solo_improvement = sum_single_client_costs - baseline_cost
+println("Collective improvement: ", collective_improvement)
+println("Solo improvement: ", solo_improvement)
+println("Improvement percentage: ", (collective_improvement-solo_improvement)/solo_improvement*100, " %")
 
 start_time_shapley = now()
 shapley_vals = shapley_value(clients, coalitions, coalition_values)
@@ -72,7 +85,7 @@ println("Time taken to calculate shapley values: ", end_time_shapley - start_tim
 println("Sum of Shapley values: ", sum(values(shapley_vals)))
 println("Discrepancy from grand coalition cost (should be 0): ", sum(values(shapley_vals)) - coalition_values[grand_coalition])
 
-sum_single_client_costs = sum(coalition_values[[client]] for client in clients)
+
 
 println("Sum of single client coalition revenue: ", sum_single_client_costs)
 println("Sum of grand coalition revenue: ", coalition_values[grand_coalition])

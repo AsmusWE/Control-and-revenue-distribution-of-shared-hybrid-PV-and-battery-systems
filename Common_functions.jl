@@ -54,10 +54,10 @@ function load_data()
     T = 24
     C = length(all_clients)
     # Clients used for grand coalition
-    clients = [1 2 3 4 5 6 7 8 9 10]
+    #clients = [1 2 3 4 5 6 7 8 9 10]
 
     #clients = [1 2]
-    #clients = [1 2 3]
+    clients = [1 2 3 4 5 6 7]
     demand = zeros(Float64, C, T)
     # Dummy demand data
     demand[1, :] = 1 * [0.5, 0.3, 0.4, 0.6, 0.7, 0.8, 0.5, 0.6, 0.7, 0.8, 0.5, 0.6, 0.7, 0.8, 0.5, 0.6, 0.7, 0.8, 0.5, 0.6, 0.7, 0.8, 0.5, 0.6]

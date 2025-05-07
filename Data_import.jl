@@ -1,8 +1,14 @@
 using CSV
 using DataFrames
+using TimeZones
 
-function load_data(batCap = 100.0, initSoC = 0.0)
+function load_data(batCap = 100.0, initSoC = 0.0, stochastic = false)
+    
     demand = CSV.read("Data/consumption_data.csv", DataFrame)
+    #testTimeCET = ZonedDateTime(String(demand[!,"datetime_cet"][1]), "yyyy-mm-dd HH:MM:SSz")
+    demand[!, :HourUTC_datetime] = DateTime.(demand[:, :datetime_cet], DateFormat("yyyy-mm-dd HH:MM:SSz")) .- Hour(1)
+    demand = select!(demand, Not(:datetime_cet))
+    demand[!, :Z] .= 0
 
     # NOTE: Added client Z who is the PV owner
     clientPVOwnership = Dict(
@@ -16,7 +22,22 @@ function load_data(batCap = 100.0, initSoC = 0.0)
     clientBatteryOwnership = clientPVOwnership
 
     pvProduction = CSV.read("Data/ProductionMunicipalityHour.csv", DataFrame; decimal=',')
+    pvProduction[!, :HourUTC_datetime] = DateTime.(pvProduction[:, :HourUTC], DateFormat("yyyy-mm-dd HH:MM:SS"))
+    # Rescale PV production to align with plant size 
+    plant_size = 14.0 # MW
+    old_plant_size = maximum(pvProduction[:, :SolarMWh])
+    rename!(pvProduction,:SolarMWh => :SolarMWh_unscaled)
+    pvProduction[!, :SolarMWh] = pvProduction[!, :SolarMWh_unscaled].*plant_size / old_plant_size
+    pvProduction = select(pvProduction, [:HourUTC_datetime, :SolarMWh])
+
     priceData = CSV.read("Data/Elspotprices.csv", DataFrame; decimal=',')
+    priceData[!, :HourUTC_datetime] = DateTime.(priceData[:, :HourUTC], DateFormat("yyyy-mm-dd HH:MM:SS"))
+    priceData = select(priceData, [:HourUTC_datetime, :SpotPriceDKK])
+
+    # Combine the two dataframes based on the HourUTC column
+    combinedData = innerjoin(pvProduction, priceData, demand , on=:HourUTC_datetime)
+
+
 
     # Adding tariffs
     # Elafgift is 4 oere/kWh = 40 DKK/MWh for companies
@@ -32,10 +53,10 @@ function load_data(batCap = 100.0, initSoC = 0.0)
     importTariffN1Peak = 333.7 # DKK/MWh
     availabilityTariffN1 = 152.7 # DKK/MWh
     # Initialize priceImp with the base import tariff from Energinet
-    priceImp = priceData[:, :SpotPriceDKK] .+ importTariffEnerginet .+ elafgift
+    priceImp = combinedData[:, :SpotPriceDKK] .+ importTariffEnerginet .+ elafgift
     # Apply time-based tariffs
-    for i in 1:size(priceData, 1)
-        timestamp = DateTime(priceData[i, :HourUTC], DateFormat("yyyy-mm-dd HH:MM:SS"))
+    for i in 1:size(combinedData, 1)
+        timestamp = combinedData[i, :HourUTC_datetime]
         weekday = dayofweek(timestamp)
         hour = Dates.hour(timestamp)
         month = Dates.month(timestamp)
@@ -50,31 +71,32 @@ function load_data(batCap = 100.0, initSoC = 0.0)
             priceImp[i] += importTariffN1High
         end
     end
-    priceExp = priceData[:, :SpotPriceDKK] .- exportTariffEnerginet .- exportTariffN1
+    priceExp = combinedData[:, :SpotPriceDKK] .- exportTariffEnerginet .- exportTariffN1
+
+    # Adding to combinedData
+    combinedData[!, :PriceImp] = priceImp
+    combinedData[!, :PriceExp] = priceExp
 
     clients = keys(clientPVOwnership)
 
-    # Create a new DataFrame that combines prices and PV production
-    # Trim the data to match the shortest length
-    min_length = minimum([length(priceData[:, :SpotPriceDKK]), length(pvProduction[:, :SolarMWh]), length(demand[:, :A])])
-    priceData = priceData[1:min_length, :]
-    pvProduction = pvProduction[1:min_length, :]
-    demand = demand[1:min_length, :]
-    demand[!, :Z] .= 0
 
-    # Rescale PV production to align with plant size 
-    plant_size = 14.0 # MW
-    old_plant_size = maximum(pvProduction[:, :SolarMWh])
-    pvProduction[:, :SolarMWh] .*= plant_size / old_plant_size
 
-    # Create a new DataFrame that combines prices, PV production, and demand
-    price_prod_demand_df = DataFrame(
-        PriceImp = priceImp[1:min_length],
-        PriceExp = priceExp[1:min_length],
-        PVProduction = pvProduction[:, :SolarMWh], 
-    )
-    for client in clients
-        price_prod_demand_df[!, Symbol(client)] = demand[:, client]
+    # TODO: Loading forecasts and ensuring data overlap
+    if stochastic
+        pv_forecast = CSV.read("Data/Solar_Forecasts_Hour.csv", DataFrame; decimal=',')
+        pv_forecast[!, :HourUTC_datetime] = DateTime.(pv_forecast[:, :HourUTC], DateFormat("yyyy-mm-dd HH:MM:SS"))
+        rename!(pv_forecast, :ForecastCurrent => :ForecastCurrent_unscaled)
+        old_plant_size = maximum(pv_forecast[:, :ForecastCurrent_unscaled])
+        pv_forecast[!, :ForecastCurrent] = pv_forecast[!, :ForecastCurrent_unscaled] .* plant_size / old_plant_size
+        pv_forecast = select(pv_forecast, [:HourUTC_datetime, :ForecastCurrent])
+
+        # Create forecast columns for each client's demand
+        for client in clients
+            forecast_column_name = Symbol("Forecast_", client)
+            combinedData[!, forecast_column_name] = combinedData[!, client] .* (1 .+ 0.1 .* randn(size(combinedData, 1)))
+        end
+
+        combinedData = innerjoin(combinedData, pv_forecast, on=:HourUTC_datetime)
     end
 
     missing_data_counts = Dict()
@@ -86,7 +108,7 @@ function load_data(batCap = 100.0, initSoC = 0.0)
 
     # Dropping columns with missing values
     #demand = select!(demand, Not([:"C",:"P",:"B",:"M",:"D",:"E",:"R"]))
-    
+
 
     println("Missing data points for each client:")
     println(missing_data_counts)
@@ -101,11 +123,9 @@ function load_data(batCap = 100.0, initSoC = 0.0)
         "priceImp" => priceImp,
         "priceExp" => priceExp,
         "clients" => clients,
-        "price_prod_demand_df" => price_prod_demand_df
+        "price_prod_demand_df" => combinedData
     )
     return systemData, clients_without_missing_data
 end
-
-
 
     

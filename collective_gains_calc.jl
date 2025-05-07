@@ -10,13 +10,6 @@ hours = 1000
 systemData["price_prod_demand_df"] = systemData["price_prod_demand_df"][1:hours, :]
 clients = systemData["clients"]
 
-#clients_without_missing_data_indexes = [findfirst(isequal(client), clients_array) for client in clients_without_missing_data]
-
-#for client in clients_without_missing_data
-#    avg_prod_share = systemData["clientPVOwnership"][client] * sum(systemData["price_prod_demand_df"][!,"PVProduction"])/length(systemData["price_prod_demand_df"][!,"PVProduction"])
-#    println("Average demand for client ", client, ": ", sum(systemData["price_prod_demand_df"][!, client])/length(systemData["price_prod_demand_df"][!, client]), " Average production share: ", avg_prod_share)
-#end
-
 # Removing clients from cooperation
 #clients_without_missing_data = filter(x -> !(x in ["G", "A"]), clients_without_missing_data)
 clients_without_missing_data = filter(x -> !(x in ["Z"]), clients_without_missing_data)
@@ -61,7 +54,7 @@ for client in clients_without_missing_data
     println("Calculating baseline for client: ", client)
     systemData["batCap"] = 0
     # Setting PV production to 0
-    systemData["price_prod_demand_df"][!, "PVProduction"] = systemData["price_prod_demand_df"][!, "PVProduction"] .* 0
+    systemData["price_prod_demand_df"][!, "SolarMWh"] = systemData["price_prod_demand_df"][!, "SolarMWh"] .* 0
     coalition_result, imported_pow = solve_coalition([client], systemData)
     push!(baseline_individual_operation, coalition_result)
     push!(baseline_individual_operation_import, imported_pow)

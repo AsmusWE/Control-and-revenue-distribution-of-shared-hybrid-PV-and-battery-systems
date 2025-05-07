@@ -11,12 +11,12 @@ using Gurobi
 
 #************************************************************************
 #coalition = [1, 2, 4]
-function solve_coalition(coalition, systemData, model = "Simple" ,plotting = false)
+function solve_coalition(coalition, systemData, model = "Simple" ,plotting = false, stochastic = false)
     # Data
     #demand = systemData["demand"]
 
     #pvProduction = systemData["pvProduction"]
-    pvProduction = systemData["price_prod_demand_df"][!, :PVProduction]
+    pvProduction = systemData["price_prod_demand_df"][!, :SolarMWh]
     T = length(pvProduction)
     C = length(coalition)
 
@@ -113,7 +113,7 @@ function solve_coalition(coalition, systemData, model = "Simple" ,plotting = fal
     else
         @objective(Bat, Max, sum(priceExp[t]*GridExp[t,c]-priceImp[t]*GridImp[t,c] for t=1:T, c in coalition_indexes))
     end
-    
+
     # Power balance constraint
     if model == "Simple"
         @constraint(Bat, powerBal[t=1:T],

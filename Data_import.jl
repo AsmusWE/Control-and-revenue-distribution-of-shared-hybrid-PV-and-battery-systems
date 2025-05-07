@@ -18,13 +18,39 @@ function load_data(batCap = 100.0, initSoC = 0.0)
     pvProduction = CSV.read("Data/ProductionMunicipalityHour.csv", DataFrame; decimal=',')
     priceData = CSV.read("Data/Elspotprices.csv", DataFrame; decimal=',')
 
-    # Extract specific columns or preprocess as needed
-    priceImp = priceData[:, :SpotPriceDKK]
-    # Setting negative prices to zero
-    priceImp = max.(priceImp, 0)
-    # Elafgift virksomhed 0,4 oere/kWh - 4 dkk/mWh
-    # Raadighedstarif antaget b-hoej 8,75 oere/kWh - 87,5 dkk/mWh
-    priceExp = priceImp .- 4.0 .- 87.5 # Adjust as needed
+    # Adding tariffs
+    # Elafgift is 4 oere/kWh = 40 DKK/MWh for companies
+    elafgift = 40 # DKK/MWh
+    # Source: https://energinet.dk/el/elmarkedet/tariffer/aktuelle-tariffer/
+    # Energinet 135 DKK/MWh import, 11.5 DKK/MWh export
+    importTariffEnerginet = 135 # DKK/MWh
+    exportTariffEnerginet = 11.5 # DKK/MWh
+    # N1 
+    exportTariffN1 = 11 # DKK/MWh
+    importTariffN1Low = 55.6 # DKK/MWh
+    importTariffN1High = 166.8 # DKK/MWh
+    importTariffN1Peak = 333.7 # DKK/MWh
+    availabilityTariffN1 = 152.7 # DKK/MWh
+    # Initialize priceImp with the base import tariff from Energinet
+    priceImp = priceData[:, :SpotPriceDKK] .+ importTariffEnerginet .+ elafgift
+    # Apply time-based tariffs
+    for i in 1:size(priceData, 1)
+        timestamp = DateTime(priceData[i, :HourUTC], DateFormat("yyyy-mm-dd HH:MM:SS"))
+        weekday = dayofweek(timestamp)
+        hour = Dates.hour(timestamp)
+        month = Dates.month(timestamp)
+
+        if hour >= 0 && hour < 6
+            priceImp[i] += importTariffN1Low
+        elseif (month in 4:9) && (weekday in [6, 7]) && (hour >= 6 && hour < 24)
+            priceImp[i] += importTariffN1Low
+        elseif (month in 10:12 || month in 1:3) && (weekday in 1:5) && (hour >= 6 && hour < 21)
+            priceImp[i] += importTariffN1Peak
+        else
+            priceImp[i] += importTariffN1High
+        end
+    end
+    priceExp = priceData[:, :SpotPriceDKK] .- exportTariffEnerginet .- exportTariffN1
 
     clients = keys(clientPVOwnership)
 

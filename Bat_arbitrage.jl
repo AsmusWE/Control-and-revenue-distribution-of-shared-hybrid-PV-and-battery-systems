@@ -11,7 +11,7 @@ using Gurobi
 
 #************************************************************************
 #coalition = [1, 2, 4]
-function solve_coalition(coalition, systemData, model = "Simple" ,plotting = false, vcg_player = nothing)
+function solve_coalition(coalition, systemData, model = "Simple" ,plotting = false)
     # Data
     #demand = systemData["demand"]
 
@@ -63,11 +63,6 @@ function solve_coalition(coalition, systemData, model = "Simple" ,plotting = fal
     set_silent(Bat)
     #set_optimizer_attribute(Bat, "OutputFlag", 0)
 
-    # Removing demand of VCG player from the demand matrix
-    if model != "Simple" && vcg_player !== nothing
-        demand[:, vcg_player] .= 0
-    end
-
     # Charging rate
     if model == "Simple"
         @variable(Bat, 0<=Cha[1:T]<=chaLim)
@@ -115,24 +110,17 @@ function solve_coalition(coalition, systemData, model = "Simple" ,plotting = fal
     # objective
     if model == "Simple"
         @objective(Bat, Max, sum(priceExp[t]*GridExp[t]-priceImp[t]*GridImp[t] for t=1:T))
-    elseif vcg_player !== nothing
-        @objective(Bat, Max, sum(priceExp[t]*GridExp[t,c]-priceImp[t]*GridImp[t,c] for t=1:T, c in coalition_indexes if c!=vcg_player))
     else
         @objective(Bat, Max, sum(priceExp[t]*GridExp[t,c]-priceImp[t]*GridImp[t,c] for t=1:T, c in coalition_indexes))
     end
-
-    # LIMITING IMPORT OF IGNORED PLAYER, ENSURE THAT THIS IS CORRECT
-    if model != "Simple" && vcg_player !== nothing
-        @constraint(Bat, [t=1:T],
-                    GridImp[t,vcg_player]<=demand[t,vcg_player])
-    end
+    
     # Power balance constraint
     if model == "Simple"
         @constraint(Bat, powerBal[t=1:T],
-                    sum(demand[t,c] for c=coalition_indexes) + Cha[t] + GridExp[t] <= prodGiven[t] + Dis[t] + GridImp[t])
+                    sum(demand[t,c] for c=coalition_indexes) + Cha[t] + GridExp[t] == prodGiven[t] + Dis[t] + GridImp[t])
     else
         @constraint(Bat, powerBal[t=1:T,c in coalition_indexes],
-                    demand[t,c] + Cha[t,c] + GridExp[t,c] <= prodGiven[t,c] + Dis[t,c] + GridImp[t,c])
+                    demand[t,c] + Cha[t,c] + GridExp[t,c] == prodGiven[t,c] + Dis[t,c] + GridImp[t,c])
     end
 
     # Battery balance constraint
@@ -192,7 +180,7 @@ function solve_coalition(coalition, systemData, model = "Simple" ,plotting = fal
             savefig("Grid_exchange_over_time.png")
         end
         if model == "Simple"
-            return objective_value(Bat)
+            return objective_value(Bat), sum(value.(GridImp))
         else
             client_import_util = Dict(c => sum(value(GridImp[t, c]) * priceImp[t] for t=1:T) for c in coalition_indexes)
             client_export_util = Dict(c => sum(value(GridExp[t, c]) * priceExp[t] for t=1:T) for c in coalition_indexes)    

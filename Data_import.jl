@@ -2,7 +2,7 @@ using CSV
 using DataFrames
 using TimeZones
 
-function load_data(batCap = 100.0, initSoC = 0.0, stochastic = false)
+function load_data(;batCap = 100.0, initSoC = 0.0)
     
     demand = CSV.read("Data/consumption_data.csv", DataFrame)
     #testTimeCET = ZonedDateTime(String(demand[!,"datetime_cet"][1]), "yyyy-mm-dd HH:MM:SSz")
@@ -79,25 +79,21 @@ function load_data(batCap = 100.0, initSoC = 0.0, stochastic = false)
 
     clients = keys(clientPVOwnership)
 
+    # Loading forecast data, this is done no matter what to keep datapoints constant between runs
+    pv_forecast = CSV.read("Data/Solar_Forecasts_Hour.csv", DataFrame; decimal=',')
+    pv_forecast[!, :HourUTC_datetime] = DateTime.(pv_forecast[:, :HourUTC], DateFormat("yyyy-mm-dd HH:MM:SS"))
+    rename!(pv_forecast, :ForecastCurrent => :ForecastCurrent_unscaled)
+    old_plant_size = maximum(pv_forecast[:, :ForecastCurrent_unscaled])
+    pv_forecast[!, :ForecastCurrent] = pv_forecast[!, :ForecastCurrent_unscaled] .* plant_size / old_plant_size
+    pv_forecast = select(pv_forecast, [:HourUTC_datetime, :ForecastCurrent])
 
-
-    # TODO: Loading forecasts and ensuring data overlap
-    if stochastic
-        pv_forecast = CSV.read("Data/Solar_Forecasts_Hour.csv", DataFrame; decimal=',')
-        pv_forecast[!, :HourUTC_datetime] = DateTime.(pv_forecast[:, :HourUTC], DateFormat("yyyy-mm-dd HH:MM:SS"))
-        rename!(pv_forecast, :ForecastCurrent => :ForecastCurrent_unscaled)
-        old_plant_size = maximum(pv_forecast[:, :ForecastCurrent_unscaled])
-        pv_forecast[!, :ForecastCurrent] = pv_forecast[!, :ForecastCurrent_unscaled] .* plant_size / old_plant_size
-        pv_forecast = select(pv_forecast, [:HourUTC_datetime, :ForecastCurrent])
-
-        # Create forecast columns for each client's demand
-        for client in clients
-            forecast_column_name = Symbol("Forecast_", client)
-            combinedData[!, forecast_column_name] = combinedData[!, client] .* (1 .+ 0.1 .* randn(size(combinedData, 1)))
-        end
-
-        combinedData = innerjoin(combinedData, pv_forecast, on=:HourUTC_datetime)
+    # Create forecast columns for each client's demand
+    for client in clients
+        forecast_column_name = Symbol("Forecast_", client)
+        combinedData[!, forecast_column_name] = combinedData[!, client] .* (1 .+ 0.1 .* randn(size(combinedData, 1)))
     end
+    combinedData = innerjoin(combinedData, pv_forecast, on=:HourUTC_datetime)
+    
 
     missing_data_counts = Dict()
     for client in clients
@@ -117,11 +113,8 @@ function load_data(batCap = 100.0, initSoC = 0.0, stochastic = false)
         "demand" => demand,
         "clientPVOwnership" => clientPVOwnership,
         "clientBatteryOwnership" => clientBatteryOwnership,
-        "pvProduction" => pvProduction,
         "initSoC" => initSoC,
         "batCap" => batCap,
-        "priceImp" => priceImp,
-        "priceExp" => priceExp,
         "clients" => clients,
         "price_prod_demand_df" => combinedData
     )

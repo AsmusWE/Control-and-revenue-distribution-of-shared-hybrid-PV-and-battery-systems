@@ -11,48 +11,55 @@ using Gurobi
 
 #************************************************************************
 #coalition = [1, 2, 4]
-function solve_coalition(coalition, systemData, model = "Simple" ,plotting = false, stochastic = false)
-    # Data
-    #demand = systemData["demand"]
-
-    #pvProduction = systemData["pvProduction"]
-    pvProduction = systemData["price_prod_demand_df"][!, :SolarMWh]
-    T = length(pvProduction)
+function solve_coalition(coalition, systemData; model = "Simple" ,plotting = false, stochastic = false)
+    # This function solves the optimization problem for a given coalition of clients
+    # Importing data that is always known
     C = length(coalition)
-
-    demand = zeros(T, C)
-    for (i, client) in enumerate(coalition)
-        demand[:,i] = systemData["price_prod_demand_df"][!, client]
-    end
-    clientPVOwnership = getindex.(Ref(systemData["clientPVOwnership"]), coalition)
-    clientBatteryOwnership = getindex.(Ref(systemData["clientBatteryOwnership"]), coalition)
-    
     initSoC = systemData["initSoC"]
     batCap = systemData["batCap"]
-    #priceImp = systemData["priceImp"]
-    #priceExp = systemData["priceExp"]
     priceImp = systemData["price_prod_demand_df"][!, :PriceImp]
     priceExp = systemData["price_prod_demand_df"][!, :PriceExp]
+    clientPVOwnership = getindex.(Ref(systemData["clientPVOwnership"]), coalition)
+    clientBatteryOwnership = getindex.(Ref(systemData["clientBatteryOwnership"]), coalition)
+    if !stochastic
+        pvProduction = systemData["price_prod_demand_df"][!, :SolarMWh]
+        T = length(pvProduction)
+        demand = zeros(T, C)
+        for (i, client) in enumerate(coalition)
+            demand[:,i] = systemData["price_prod_demand_df"][!, client]
+        end
+    else
+        TimeHorizon = 24 # Hours of forecast used
+        T = min(TimeHorizon,size(systemData["price_prod_demand_df"])[1]) # Hours of forecast used
+        systemData["price_prod_demand_df"] = systemData["price_prod_demand_df"][1:T, :]
+        # Setting future values to be based on forecast, first value is actual
+        pvProduction = systemData["price_prod_demand_df"][!, :ForecastCurrent]
+        pvProduction[1] = systemData["price_prod_demand_df"][1, :SolarMWh]
+        demand = zeros(T, C)
+        for (i, client) in enumerate(coalition)
+            forecast_column_name = Symbol("Forecast_", client)
+            # Setting future values to be based on forecast, first value is actual
+            demand[:,i] = systemData["price_prod_demand_df"][!, forecast_column_name]
+            demand[1,i] = systemData["price_prod_demand_df"][1, client]
+        end
+    end
+
+    coalition_indexes = range(1, stop=C)
+    prod = pvProduction.*sum(clientPVOwnership[c] for c in coalition_indexes)
 
     C_Rate = 0.5
     chaEff = 0.95
     disEff = 0.95
 
-    #time = range(1,stop=24)
-
-    coalition_indexes = range(1, stop=C)
-    
-    prod = pvProduction*sum(clientPVOwnership[c] for c in coalition_indexes)
-
     #Battery data
-        batCap = batCap*sum(clientBatteryOwnership[c] for c in coalition_indexes)
-        chaLim = batCap*C_Rate
-        disLim = batCap*C_Rate
-        initSoC = initSoC*sum(clientBatteryOwnership[c] for c in coalition_indexes)
+    batCap = batCap*sum(clientBatteryOwnership[c] for c in coalition_indexes)
+    chaLim = batCap*C_Rate
+    disLim = batCap*C_Rate
+    #initSoC = initSoC*sum(clientBatteryOwnership[c] for c in coalition_indexes)
 
     #Connection data
     # Inverter size assumed owned according to PV ownership to preserve super-additivity
-        gridConn = 11.3*sum(clientPVOwnership[c] for c in coalition_indexes) #MW
+    gridConn = 11.3*sum(clientPVOwnership[c] for c in coalition_indexes) #MW
     #************************************************************************
 
     #************************************************************************
@@ -180,7 +187,12 @@ function solve_coalition(coalition, systemData, model = "Simple" ,plotting = fal
             savefig("Grid_exchange_over_time.png")
         end
         if model == "Simple"
-            return objective_value(Bat), sum(value.(GridImp))
+            if !stochastic
+                return objective_value(Bat), sum(value.(GridImp))
+            else
+                first_hour_value = value.(priceExp[1]*GridExp[1]-priceImp[1]*GridImp[1])
+                return first_hour_value, value.(GridImp[1]) ,value.(SoC[1])
+            end
         else
             client_import_util = Dict(c => sum(value(GridImp[t, c]) * priceImp[t] for t=1:T) for c in coalition_indexes)
             client_export_util = Dict(c => sum(value(GridExp[t, c]) * priceExp[t] for t=1:T) for c in coalition_indexes)    

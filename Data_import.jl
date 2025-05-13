@@ -51,9 +51,10 @@ function load_data(;batCap = 100.0, initSoC = 0.0)
     importTariffN1Low = 55.6 # DKK/MWh
     importTariffN1High = 166.8 # DKK/MWh
     importTariffN1Peak = 333.7 # DKK/MWh
-    availabilityTariffN1 = 152.7 # DKK/MWh
     # Initialize priceImp with the base import tariff from Energinet
     priceImp = combinedData[:, :SpotPriceDKK] .+ importTariffEnerginet .+ elafgift
+    # Initialize tariffSum to store the sum of all tariffs for each hour
+    tariffSum = fill(0.0, size(combinedData, 1))
     # Apply time-based tariffs
     for i in 1:size(combinedData, 1)
         timestamp = combinedData[i, :HourUTC_datetime]
@@ -63,29 +64,36 @@ function load_data(;batCap = 100.0, initSoC = 0.0)
 
         if hour >= 0 && hour < 6
             priceImp[i] += importTariffN1Low
+            tariffSum[i] += importTariffN1Low
         elseif (month in 4:9) && (weekday in [6, 7]) && (hour >= 6 && hour < 24)
             priceImp[i] += importTariffN1Low
+            tariffSum[i] += importTariffN1Low
         elseif (month in 10:12 || month in 1:3) && (weekday in 1:5) && (hour >= 6 && hour < 21)
             priceImp[i] += importTariffN1Peak
+            tariffSum[i] += importTariffN1Peak
         else
             priceImp[i] += importTariffN1High
+            tariffSum[i] += importTariffN1High
         end
+        tariffSum[i] += importTariffEnerginet + elafgift + exportTariffEnerginet + exportTariffN1
     end
     priceExp = combinedData[:, :SpotPriceDKK] .- exportTariffEnerginet .- exportTariffN1
 
     # Adding to combinedData
     combinedData[!, :PriceImp] = priceImp
     combinedData[!, :PriceExp] = priceExp
+    combinedData[!, :TariffSum] = tariffSum
 
     clients = keys(clientPVOwnership)
+    clients = sort(collect(clients))
 
     # Loading forecast data, this is done no matter what to keep datapoints constant between runs
     pv_forecast = CSV.read("Data/Solar_Forecasts_Hour.csv", DataFrame; decimal=',')
     pv_forecast[!, :HourUTC_datetime] = DateTime.(pv_forecast[:, :HourUTC], DateFormat("yyyy-mm-dd HH:MM:SS"))
     rename!(pv_forecast, :ForecastCurrent => :ForecastCurrent_unscaled)
     old_plant_size = maximum(pv_forecast[:, :ForecastCurrent_unscaled])
-    pv_forecast[!, :ForecastCurrent] = pv_forecast[!, :ForecastCurrent_unscaled] .* plant_size / old_plant_size
-    pv_forecast = select(pv_forecast, [:HourUTC_datetime, :ForecastCurrent])
+    pv_forecast[!, :PVForecast] = pv_forecast[!, :ForecastCurrent_unscaled] .* plant_size / old_plant_size
+    pv_forecast = select(pv_forecast, [:HourUTC_datetime, :PVForecast])
 
     # Create forecast columns for each client's demand
     for client in clients

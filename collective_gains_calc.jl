@@ -1,6 +1,7 @@
 include("Bat_arbitrage.jl")
 include("Common_functions.jl")
 include("Data_import.jl")
+include("Scenario_creation.jl")
 using Plots
 using Dates
 
@@ -116,7 +117,7 @@ end
 stoch = true # Set to true to solve the problems using forecast
 systemData, clients_without_missing_data = load_data()
 # Set the number of hours for the simulation
-hours = 48*6
+hours = 48*60
 systemData["price_prod_demand_df"] = systemData["price_prod_demand_df"][1:hours, :]
 clients = systemData["clients"]
 

@@ -96,10 +96,10 @@ function load_data(;batCap = 100.0, initSoC = 0.0)
     pv_forecast = select(pv_forecast, [:HourUTC_datetime, :PVForecast])
 
     # Create forecast columns for each client's demand
-    for client in clients
-        forecast_column_name = Symbol("Forecast_", client)
-        combinedData[!, forecast_column_name] = combinedData[!, client] .* (1 .+ 0.1 .* randn(size(combinedData, 1)))
-    end
+    #for client in clients
+    #    forecast_column_name = Symbol("Forecast_", client)
+    #    combinedData[!, forecast_column_name] = combinedData[!, client] .* (1 .+ 0.1 .* randn(size(combinedData, 1)))
+    #end
     combinedData = innerjoin(combinedData, pv_forecast, on=:HourUTC_datetime)
     
 

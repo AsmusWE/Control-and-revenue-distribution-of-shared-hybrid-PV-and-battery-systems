@@ -1,8 +1,8 @@
 #************************************************************************
 using JuMP
 using HiGHS
-using Plots
-using Gurobi
+#using Plots
+#using Gurobi
 
 
 #************************************************************************
@@ -34,7 +34,7 @@ function optimize_imbalance(coalition, systemData)
     #    demand[:,i,1] = systemData["price_prod_demand_df"][!, forecast_column_name]
     #end
     pvProduction = systemData["price_prod_demand_df"][!, :PVForecast]
-    coalition_indexes = 1:C
+    #coalition_indexes = 1:C
     prod = pvProduction.*sum(clientPVOwnership)
 
     #C_Rate = 0.5
@@ -54,6 +54,8 @@ function optimize_imbalance(coalition, systemData)
 
     # Initialize the optimization model
     model = Model(HiGHS.Optimizer)
+    #model = Model(Gurobi.Optimizer)
+    #set_optimizer_attribute(model, "OutputFlag", 0)
     set_silent(model)
 
     @variable(model, imbal[1:T, 1:S]) # Imbalance amount
@@ -64,7 +66,7 @@ function optimize_imbalance(coalition, systemData)
     @objective(model, Min, prob * sum((pos_imbal[t, s] + neg_imbal[t, s]) for t in 1:T for s in 1:S)) # Objective function
 
     @constraint(model, [t = 1:T, s = 1:S],
-                imbal[t, s]+bid[t] == demand[t, s] - prod[t])
+                imbal[t, s] == demand[t, s] - prod[t] - bid[t])
     @constraint(model, [t = 1:T, s = 1:S], pos_imbal[t, s] - neg_imbal[t, s] == imbal[t, s])
     solution = optimize!(model)
     if termination_status(model) == MOI.OPTIMAL

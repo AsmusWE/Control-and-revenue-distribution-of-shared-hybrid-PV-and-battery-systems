@@ -42,24 +42,63 @@ function calculate_imbalance(systemData, clients; plotting = false)
         
         display(p)
     end
-
-    return imbalance, bids
+    # Calculate the total imbalance for each coalition
+    total_imbalance = Dict()
+    for coalition in coalitions
+        total_imbalance[coalition] = sum(imbalance[coalition])
+    end
+    return total_imbalance, bids
 end
 
 function calculate_bids(coalitions, systemData)
     # This function calculates the bids for each coalition combination
     bids = Dict()
+    # A different dictionary is initialized for each thread to avoid
+    # simultaneous writes to the same dictionary
+    thread_local_bids = Dict(tid => Dict() for tid in 1:Threads.nthreads())
     Threads.@threads for clients in coalitions
-        bids[clients] = optimize_imbalance(clients,systemData)
+        thread_local_bids[Threads.threadid()][clients] = optimize_imbalance(clients, systemData)
+    end
+    for thread_dict in values(thread_local_bids)
+        merge!(bids, thread_dict)
     end
     return bids
+end
+
+function shapley_value(clients, coalitions, imbalances)
+    n = length(clients)
+    shapley_vals = Dict()
+    for client in clients
+        shapley_vals[client] = 0.0
+    end
+
+    for (idx, i) in enumerate(clients)
+        i_coalition = [c for c in coalitions if clients[idx] in c]
+        # Looping through all coalitions containing client i
+        for c in i_coalition
+            S = length(c)
+            # Creating the coalition that doesn't contain client i
+            c_without_i = filter(x -> x != clients[idx], c)
+            # If the coalition without client i is empty, set value of empty coalition as 0
+            if isempty(c_without_i)
+                imbalance_without_i = 0.0
+            else
+                imbalance_without_i = imbalances[c_without_i]
+            end
+
+            # Calculate the Shapley value contribution for client i in coalition c
+            shapley_vals[i] += factorial(S - 1) * factorial(n - S) / factorial(n) * (imbalances[c] - imbalance_without_i)
+        end
+    end
+
+    return shapley_vals
 end
 
 Random.seed!(12) # Set seed for reproducibility
 
 systemData, clients_without_missing_data = load_data()
 clients_without_missing_data = filter(x -> x != "Z", clients_without_missing_data)
-clients_without_missing_data = filter(x -> !(x in ["W", "T", "P", "V", "J", "F","R","K","U","Y","O","A"]), clients_without_missing_data)
+clients_without_missing_data = filter(x -> !(x in ["W", "T", "P", "V", "J", "F","R","K","U","Y","O"]), clients_without_missing_data)
 
 coalitions = collect(combinations(clients_without_missing_data))
 demand_scenarios = generate_scenarios(clients_without_missing_data, systemData["price_prod_demand_df"]; num_scenarios=200)
@@ -72,7 +111,10 @@ imbalance_results = Dict()
 dayData = deepcopy(systemData)
 dayData["price_prod_demand_df"] = systemData["price_prod_demand_df"][1:24, :]
 imbalances, bids = calculate_imbalance(dayData, clients_without_missing_data; plotting=false)
-println("Test")
+
+shapley_values = shapley_value(clients_without_missing_data, coalitions, imbalances)
+println("Shapley values: ", shapley_values)
+
 #total_imbalance, bids = calculate_imbalance(systemData, clients_without_missing_data; days=simulation_days, plotting=false)
 
 #for (idx,clients) in enumerate(client_combinations)

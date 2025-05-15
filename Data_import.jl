@@ -113,9 +113,11 @@ function load_data(;batCap = 100.0, initSoC = 0.0)
     # Dropping columns with missing values
     #demand = select!(demand, Not([:"C",:"P",:"B",:"M",:"D",:"E",:"R"]))
 
+    # Remove weekend hours from combinedData
+    combinedData = filter(row -> dayofweek(row[:HourUTC_datetime]) in 1:5, combinedData)
 
-    println("Missing data points for each client:")
-    println(missing_data_counts)
+    #println("Missing data points for each client:")
+    #println(missing_data_counts)
 
     systemData = Dict(
         "demand" => demand,

@@ -20,11 +20,12 @@ function optimize_imbalance(coalition, systemData)
 
     TimeHorizon = 24 # Hours of forecast used
     demand = sum(systemData["demand_scenarios"][c] for c in coalition)
+
     #demand = demand.+5/C
 
     T = min(TimeHorizon,size(systemData["price_prod_demand_df"])[1]) # Hours of forecast used
     
-    S = length(demand[1,:]) # Number of scenarios, only one scenario for now
+    S = length(demand[1,:]) # Number of scenarios
     prob = 1/S # Probability of each scenario
     #systemData["price_prod_demand_df"] = systemData["price_prod_demand_df"][1:T, :]
     #pvForecast = systemData["price_prod_demand_df"][!, :ForecastCurrent]
@@ -63,7 +64,7 @@ function optimize_imbalance(coalition, systemData)
     @variable(model, neg_imbal[1:T, 1:S] >= 0) # Negative imbalance
     @variable(model, bid[1:T]) # Bid amount
 
-    @objective(model, Min, prob * sum((pos_imbal[t, s] + neg_imbal[t, s]) for t in 1:T for s in 1:S)) # Objective function
+    @objective(model, Min, prob * sum((pos_imbal[t, s] + 1.2*neg_imbal[t, s]) for t in 1:T for s in 1:S)) # Objective function
 
     @constraint(model, [t = 1:T, s = 1:S],
                 imbal[t, s] == demand[t, s] - prod[t] - bid[t])

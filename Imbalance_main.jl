@@ -16,7 +16,7 @@ Random.seed!(1) # Set seed for reproducibility
 systemData, clients_without_missing_data = load_data()
 clients_without_missing_data = filter(x -> x != "Z", clients_without_missing_data)
 #clients_without_missing_data = filter(x -> !(x in ["W", "T", "P", "V", "J", "F","R","K","U","Y","O"]), clients_without_missing_data)
-#clients_without_missing_data = filter(x -> x in ["A", "S"], clients_without_missing_data)
+#clients_without_missing_data = filter(x -> x in ["L", "Q"], clients_without_missing_data)
 
 coalitions = collect(combinations(clients_without_missing_data))
 demand_scenarios = generate_scenarios(clients_without_missing_data, systemData["price_prod_demand_df"]; num_scenarios=100)
@@ -30,13 +30,13 @@ systemData["downreg_price"] = 0.9
 
 #imbalances, bids, hourly_imbalance = calculate_imbalance(dayData, clients_without_missing_data)
 start_hour = DateTime(2023, 7, 1, 0, 0, 0)
-sim_days = 12
+sim_days = 20
 
-imbalances, hourly_imbalances, hourly_signs  = @time period_imbalance(systemData, clients_without_missing_data, start_hour, sim_days)
+imbalances, hourly_imbalances  = @time period_imbalance(systemData, clients_without_missing_data, start_hour, sim_days)
 
 shapley_values = shapley_value(clients_without_missing_data, coalitions, imbalances)
 println("Shapley values: ", shapley_values)
-VCG_taxes = VCG_tax(clients_without_missing_data, imbalances, hourly_imbalances, hourly_signs, systemData)
+VCG_taxes = VCG_tax(clients_without_missing_data, imbalances, hourly_imbalances, systemData)
 VCG_utilities = Dict()
 for client in clients_without_missing_data
     #VCG_utilities[client] = VCG_taxes[[client]] - imbalances[[client]]
@@ -52,6 +52,8 @@ individual_imbalance_sum = sum(imbalances[[client]] for client in clients_withou
 
 println("Grand coalition imbalance: ", grand_coalition_imbalance)
 println("Sum of individual client imbalances: ", individual_imbalance_sum)
+println("Difference: ", grand_coalition_imbalance - individual_imbalance_sum)
+println("Sum of VCG taxes: ", sum(values(VCG_taxes)))
 
 imbalance_fee_total = deepcopy(shapley_values)
 

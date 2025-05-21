@@ -33,7 +33,7 @@ function shapley_value(clients, coalitions, coalition_values)
     return shapley_vals
 end
 
-systemData = load_data()
+systemData = test_load_data()
 clients = systemData["clients"]
 
 #start_time_generation = now()

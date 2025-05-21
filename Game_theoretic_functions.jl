@@ -60,45 +60,65 @@ function check_stability(payoffs, coalition_values, coalitions)
     #end
 end
 
-function VCG_tax(clients, imbalances, hourly_imbalances, client_signs, systemData)
+function VCG_tax(clients, imbalances, hourly_imbalances, systemData)
     # This function calculates the VCG value for each client in the grand coalition
     T = length(hourly_imbalances[[clients[1]]])
     VCG_taxes = Dict()
     grand_coalition = vec(clients)
+    
+
+    # Plot hourly imbalances for all clients
+    plot()
+    for client in clients
+        plot!(1:T, hourly_imbalances[[client]], label=string(client))
+    end
+    xlabel!("Hour")
+    ylabel!("Imbalance")
+    title!("Hourly Imbalances for All Clients")
+    display(current())
+
     for (idx, i) in enumerate(clients)
         gc_val_minus_i = 0
+        coalition_without_i = filter(x -> x != clients[idx], grand_coalition)
+        coalition_value_without_i = imbalances[coalition_without_i]
+
         for t in 1:T
-            # Client_signs = 1 for overshoot, 0 for undershoot
-            if client_signs[[i]][t] != client_signs[grand_coalition][t]
+            client_imbalance = abs(hourly_imbalances[[i]][t])
+            # Comparing to the grand coalition without client i
+            coalition_imbalance = abs(hourly_imbalances[coalition_without_i][t])
+            gc_imbalance = abs(hourly_imbalances[grand_coalition][t])
+            # If the sign is not the same, the client reduced their imbalance by joining
+            if sign(hourly_imbalances[[i]][t]) != sign(hourly_imbalances[coalition_without_i][t])
                 client_price = 0
-                grand_coalition_price = 0
+                coalition_price = 0
                 # If the client needs downregulation and the grand coalition needs upregulation
-                if client_signs[[i]][t]
+                if hourly_imbalances[[i]][t] > 0
                     client_price = systemData["downreg_price"]
-                    grand_coalition_price = systemData["upreg_price"]
+                    coalition_price = systemData["upreg_price"]
                 else
                     client_price = systemData["upreg_price"]
-                    grand_coalition_price = systemData["downreg_price"]
+                    coalition_price = systemData["downreg_price"]
                 end
-                # The maximum change will be from canceling out the grand coalitions imbalance
-                max_change = hourly_imbalances[grand_coalition][t]
-                # Converting from client price to grand coalition price
-                client_change = hourly_imbalances[[i]][t]/client_price*grand_coalition_price
-                # Change will be minimum of these
-                change = min(max_change, client_change)
+                # The maximum savings will be from canceling out the coalitions imbalance
+                # This is converted to client cost
+                max_savings = coalition_imbalance/coalition_price*client_price
+                # This will be the costs of the client as part of the grand coalition
+                # Costs cannot be negative
+                client_costs = max(client_imbalance - max_savings,0)
 
-                gc_val_minus_i += hourly_imbalances[grand_coalition][t] - change
+                gc_val_minus_i += gc_imbalance - client_costs
             else
-                # If the client and grand coalition have the same sign, the client will not be able to cancel out the grand coalitions imbalance
-                gc_val_minus_i += hourly_imbalances[grand_coalition][t]
+                # If the client and grand coalition have the same sign, the externality will be 0
+                gc_val_minus_i += coalition_imbalance
             end
         end
         
-        coalition_without_i = filter(x -> x != clients[idx], grand_coalition)
-        coalition_value_without_i = imbalances[coalition_without_i]
-        VCG_taxes[[i]] = (coalition_value_without_i-gc_val_minus_i)
+        # Multiplying by -1 because this is a cost reduction game
+        VCG_taxes[[i]] = -(coalition_value_without_i-gc_val_minus_i)
         #println("Client ", i, " VCG tax: ", VCG_taxes[i], " (Grand coalition value minus i: ", grand_coalition_value_minus_i, ", Coalition value without i: ", coalition_value_without_i, ")")
     end
     return VCG_taxes
 end
+
+
 

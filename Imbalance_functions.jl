@@ -111,7 +111,7 @@ function calculate_imbalance(systemData, clients)
         total_imbalance[coalition] = sum(abs.(imbalance[coalition]))
     end
 
-    return total_imbalance, bids, imbalance, signs
+    return total_imbalance, bids, imbalance
 end
 
 function calculate_bids(coalitions, systemData)
@@ -153,7 +153,6 @@ function period_imbalance(systemData, clients, startDay, days)
     # Initialize thread-specific dictionaries to avoid concurrent writes
     thread_local_imbalances = Dict(tid => Dict() for tid in 1:Threads.nthreads())
     thread_local_hourly_imbalance = Dict(tid => Dict() for tid in 1:Threads.nthreads())
-    thread_local_signs = Dict(tid => Dict() for tid in 1:Threads.nthreads())
     
     Threads.@threads for day in 1:days
         println("Calculating imbalances for day ", day, " of ", days)
@@ -162,7 +161,7 @@ function period_imbalance(systemData, clients, startDay, days)
         day_start = start_hour + (day - 1) * 24
         day_end = day_start + 23
         dayData["price_prod_demand_df"] = systemData["price_prod_demand_df"][day_start:day_end, :]
-        daily_imbalances, bids, hourly_imbalance, hourly_signs = calculate_imbalance(dayData, clients)
+        daily_imbalances, bids, hourly_imbalance = calculate_imbalance(dayData, clients)
         
         # Store daily imbalances in the thread-specific dictionary
         for (coalition, imbalance) in daily_imbalances
@@ -173,18 +172,15 @@ function period_imbalance(systemData, clients, startDay, days)
                 thread_local_imbalances[tid][coalition] = imbalance
                 # Initialize the hourly imbalance and signs for this coalition
                 thread_local_hourly_imbalance[tid][coalition] = zeros(days*24)
-                thread_local_signs[tid][coalition] = zeros(days*24)
             end
             # Store the hourly imbalance and signs for this coalition
             thread_local_hourly_imbalance[tid][coalition][(day-1)*24+1:day*24] = hourly_imbalance[coalition]
-            thread_local_signs[tid][coalition][(day-1)*24+1:day*24] = hourly_signs[coalition]
         end
     end
 
     # Merge thread-specific dictionaries into a single dictionary
     period_imbalances = Dict()
     period_hourly_imbalance = Dict()
-    period_signs = Dict()
 
     for thread_dict in values(thread_local_imbalances)
         for (coalition, imbalance) in thread_dict
@@ -205,18 +201,5 @@ function period_imbalance(systemData, clients, startDay, days)
         end
     end
 
-    for thread_dict in values(thread_local_signs)
-        for (coalition, signs) in thread_dict
-            if !haskey(period_signs, coalition)
-                period_signs[coalition] = zeros(days*24)
-            end    
-            period_signs[coalition] += signs   
-        end
-    end
-    # Convert period_signs arrays from floats to bools
-    for (coalition, signs) in period_signs
-        period_signs[coalition] = period_signs[coalition] .> 0.5
-    end
-
-    return period_imbalances, period_hourly_imbalance, period_signs
+    return period_imbalances, period_hourly_imbalance
 end

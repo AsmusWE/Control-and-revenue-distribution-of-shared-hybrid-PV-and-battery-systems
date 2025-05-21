@@ -22,21 +22,21 @@ coalitions = collect(combinations(clients_without_missing_data))
 demand_scenarios = generate_scenarios(clients_without_missing_data, systemData["price_prod_demand_df"]; num_scenarios=100)
 systemData["demand_scenarios"] = demand_scenarios
 # We assume that upregulation is more expensive than downregulation
-systemData["upreg_price"] = 1.1
-systemData["downreg_price"] = 0.9
+systemData["upreg_price"] = 1.2
+systemData["downreg_price"] = 0.8
 
 #dayData = deepcopy(systemData)
 #dayData["price_prod_demand_df"] = systemData["price_prod_demand_df"][25:48, :]
 
 #imbalances, bids, hourly_imbalance = calculate_imbalance(dayData, clients_without_missing_data)
 start_hour = DateTime(2023, 7, 1, 0, 0, 0)
-sim_days = 20
+sim_days = 24
 
 imbalances, hourly_imbalances  = @time period_imbalance(systemData, clients_without_missing_data, start_hour, sim_days)
 
-shapley_values = shapley_value(clients_without_missing_data, coalitions, imbalances)
+shapley_values = @time shapley_value(clients_without_missing_data, coalitions, imbalances)
 println("Shapley values: ", shapley_values)
-VCG_taxes = VCG_tax(clients_without_missing_data, imbalances, hourly_imbalances, systemData)
+VCG_taxes = @time VCG_tax(clients_without_missing_data, imbalances, hourly_imbalances, systemData)
 VCG_utilities = Dict()
 for client in clients_without_missing_data
     #VCG_utilities[client] = VCG_taxes[[client]] - imbalances[[client]]

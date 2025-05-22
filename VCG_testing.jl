@@ -1,12 +1,13 @@
-clients = ["A", "B", "C", "D"]
+clients = ["A", "B", "C", "D","E"]
 systemData = Dict("downreg_price" => 1, "upreg_price" => 1)
 downreg_price = systemData["downreg_price"]
 upreg_price = systemData["upreg_price"]
 hourly_imbalances = Dict(
-    ["A"] => [0],
-    ["B"] => [0],
-    ["C"] => [0],
-    ["D"] => [0]
+    ["A"] => [3],
+    ["B"] => [-3],
+    ["C"] => [-2],
+    ["D"] => [12],
+    ["E"] => [-1]
 )
 # This function calculates the VCG value for each client in the grand coalition
 T = length(hourly_imbalances[[clients[1]]])

@@ -15,6 +15,9 @@ Random.seed!(1) # Set seed for reproducibility
 
 systemData, clients_without_missing_data = load_data()
 clients_without_missing_data = filter(x -> x != "Z", clients_without_missing_data)
+#clients_without_missing_data = filter(x -> x != "A", clients_without_missing_data)
+#clients_without_missing_data = filter(x -> x != "G", clients_without_missing_data)
+
 #clients_without_missing_data = filter(x -> !(x in ["W", "T", "P", "V", "J", "F","R","K","U","Y","O"]), clients_without_missing_data)
 #clients_without_missing_data = filter(x -> x in ["L", "Q"], clients_without_missing_data)
 
@@ -22,21 +25,22 @@ coalitions = collect(combinations(clients_without_missing_data))
 demand_scenarios = generate_scenarios(clients_without_missing_data, systemData["price_prod_demand_df"]; num_scenarios=100)
 systemData["demand_scenarios"] = demand_scenarios
 # We assume that upregulation is more expensive than downregulation
-systemData["upreg_price"] = 1.2
-systemData["downreg_price"] = 0.8
+systemData["upreg_price"] = 1
+systemData["downreg_price"] = 1
 
-#dayData = deepcopy(systemData)
-#dayData["price_prod_demand_df"] = systemData["price_prod_demand_df"][25:48, :]
+# First hour 2024-04-16T22:00:00
+# Last hour 2025-04-25T23:00:00
+start_hour = DateTime(2024, 8, 12, 0, 0, 0)
+sim_days = 12
 
-#imbalances, bids, hourly_imbalance = calculate_imbalance(dayData, clients_without_missing_data)
-start_hour = DateTime(2023, 7, 1, 0, 0, 0)
-sim_days = 24
+systemData["perfect_demand_forecast"] = false
+systemData["perfect_pv_forecast"] = true
 
-imbalances, hourly_imbalances  = @time period_imbalance(systemData, clients_without_missing_data, start_hour, sim_days)
+imbalances, hourly_imbalances, bids  = @time period_imbalance(systemData, clients_without_missing_data, start_hour, sim_days)
 
-shapley_values = @time shapley_value(clients_without_missing_data, coalitions, imbalances)
+shapley_values = shapley_value(clients_without_missing_data, coalitions, imbalances)
 println("Shapley values: ", shapley_values)
-VCG_taxes = @time VCG_tax(clients_without_missing_data, imbalances, hourly_imbalances, systemData)
+VCG_taxes = VCG_tax(clients_without_missing_data, imbalances, hourly_imbalances, systemData)
 VCG_utilities = Dict()
 for client in clients_without_missing_data
     #VCG_utilities[client] = VCG_taxes[[client]] - imbalances[[client]]
@@ -85,9 +89,10 @@ combined_bids = bids[clients_without_missing_data]
 combined_imbalance = combined_bids + aggregate_pvProd - aggregate_demand
 
 
-plot!(p_aggregate, 1:24, aggregate_demand, label="Aggregate Demand")
-plot!(p_aggregate, 1:24, aggregate_pvProd, label="Aggregate PV Production")
-plot!(p_aggregate, 1:24, combined_bids, label="Combined Bids")
-plot!(p_aggregate, 1:24, combined_imbalance, label="Combined Imbalance")
+n_hours = length(aggregate_demand)
+plot!(p_aggregate, 1:n_hours, aggregate_demand, label="Aggregate Demand")
+plot!(p_aggregate, 1:n_hours, aggregate_pvProd, label="Aggregate PV Production")
+plot!(p_aggregate, 1:n_hours, combined_bids, label="Combined Bids")
+plot!(p_aggregate, 1:n_hours, combined_imbalance, label="Combined Imbalance")
 display(p_aggregate)
 

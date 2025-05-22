@@ -16,10 +16,16 @@ function optimize_imbalance(coalition, systemData)
     #priceExp = systemData["price_prod_demand_df"][!, :PriceExp]
     clientPVOwnership = getindex.(Ref(systemData["clientPVOwnership"]), coalition)
     #clientBatteryOwnership = getindex.(Ref(systemData["clientBatteryOwnership"]), coalition)
-
-
     TimeHorizon = 24 # Hours of forecast used
-    demand = sum(systemData["demand_scenarios"][c] for c in coalition)
+    if systemData["perfect_demand_forecast"]
+        # Demand forecast is perfect, use actual demand data
+        demand = sum(systemData["price_prod_demand_df"][1:TimeHorizon, client] for client in coalition)
+    else
+        # Demand forecast is not perfect, use forecast data
+        demand = sum(systemData["demand_scenarios"][c] for c in coalition)
+    end
+    
+    
 
     #demand = demand.+5/C
 
@@ -34,7 +40,13 @@ function optimize_imbalance(coalition, systemData)
     #    forecast_column_name = Symbol("Forecast_", client)
     #    demand[:,i,1] = systemData["price_prod_demand_df"][!, forecast_column_name]
     #end
-    pvProduction = systemData["price_prod_demand_df"][!, :PVForecast]
+    if systemData["perfect_pv_forecast"]
+        # PV forecast is perfect, use actual PV production data
+        pvProduction = systemData["price_prod_demand_df"][1:T, :SolarMWh]
+    else
+        # PV forecast is not perfect, use forecast data
+        pvProduction = systemData["price_prod_demand_df"][1:T, :PVForecast]
+    end
     #coalition_indexes = 1:C
     prod = pvProduction.*sum(clientPVOwnership)
     upreg_price = systemData["upreg_price"]
@@ -84,11 +96,7 @@ function daily_imbalance(bids, pvProd, demand)
     pvProd = pvProd[1:length(bids)] # Ensure pvProd is the same length as bids
     demand = demand[1:length(bids)] # Ensure demand is the same length as bids
     imbalance = bids + pvProd - demand
-    # Multiplying imbalance with regulation prices
-    imbalance = imbalance .* ifelse.(imbalance .< 0, systemData["upreg_price"], systemData["downreg_price"])
-    # Calculate the signs of the imbalances
-    signs = imbalance .>= 0
-    return imbalance, signs
+    return imbalance
 end
 
 function calculate_imbalance(systemData, clients)
@@ -97,21 +105,24 @@ function calculate_imbalance(systemData, clients)
     demand_sum = Dict()
     scaled_pvProd = Dict()
     imbalance = Dict()
-    signs = Dict()
     for coalition in coalitions
         demand_sum[coalition] = sum(systemData["price_prod_demand_df"][!, i] for i in coalition)
         scaled_pvProd[coalition] = systemData["price_prod_demand_df"][!, "SolarMWh"] .* sum(systemData["clientPVOwnership"][i] for i in coalition)
-        imbalance[coalition], signs[coalition] = daily_imbalance(bids[coalition], scaled_pvProd[coalition], demand_sum[coalition])
+        imbalance[coalition]= daily_imbalance(bids[coalition], scaled_pvProd[coalition], demand_sum[coalition])
     end
     
     # Calculate the total imbalance for each coalition
-    total_imbalance = Dict()
+    imbalance_cost = Dict()
+    upreg_price = systemData["upreg_price"]
+    downreg_price = systemData["downreg_price"]
     for coalition in coalitions
         #print("Coalition imbalance: ", coalition, " = ", sum(imbalance[coalition]), "\n")
-        total_imbalance[coalition] = sum(abs.(imbalance[coalition]))
+        positive_imbalance = sum(imbalance[coalition][imbalance[coalition] .> 0])
+        negative_imbalance = sum(imbalance[coalition][imbalance[coalition] .< 0])
+        imbalance_cost[coalition] = positive_imbalance * downreg_price + abs(negative_imbalance) * upreg_price
     end
-
-    return total_imbalance, bids, imbalance
+    # Imbalance is by hour, with sign and without cost include
+    return imbalance_cost, bids, imbalance
 end
 
 function calculate_bids(coalitions, systemData)
@@ -153,7 +164,8 @@ function period_imbalance(systemData, clients, startDay, days)
     # Initialize thread-specific dictionaries to avoid concurrent writes
     thread_local_imbalances = Dict(tid => Dict() for tid in 1:Threads.nthreads())
     thread_local_hourly_imbalance = Dict(tid => Dict() for tid in 1:Threads.nthreads())
-    
+    thread_local_bids = Dict(tid => Dict() for tid in 1:Threads.nthreads())
+
     Threads.@threads for day in 1:days
         println("Calculating imbalances for day ", day, " of ", days)
         tid = Threads.threadid()
@@ -161,26 +173,28 @@ function period_imbalance(systemData, clients, startDay, days)
         day_start = start_hour + (day - 1) * 24
         day_end = day_start + 23
         dayData["price_prod_demand_df"] = systemData["price_prod_demand_df"][day_start:day_end, :]
-        daily_imbalances, bids, hourly_imbalance = calculate_imbalance(dayData, clients)
+        daily_imbalance_cost, bids, hourly_imbalance = calculate_imbalance(dayData, clients)
         
         # Store daily imbalances in the thread-specific dictionary
-        for (coalition, imbalance) in daily_imbalances
+        for (coalition, imbalance) in daily_imbalance_cost
             if haskey(thread_local_imbalances[tid], coalition)
                 thread_local_imbalances[tid][coalition] += imbalance
-
             else
                 thread_local_imbalances[tid][coalition] = imbalance
-                # Initialize the hourly imbalance and signs for this coalition
+                # Initialize the hourly imbalance and bids for this coalition
                 thread_local_hourly_imbalance[tid][coalition] = zeros(days*24)
+                thread_local_bids[tid][coalition] = zeros(days*24)
             end
-            # Store the hourly imbalance and signs for this coalition
+            # Store the hourly imbalance and bids for this coalition
             thread_local_hourly_imbalance[tid][coalition][(day-1)*24+1:day*24] = hourly_imbalance[coalition]
+            thread_local_bids[tid][coalition][(day-1)*24+1:day*24] = bids[coalition]
         end
     end
 
     # Merge thread-specific dictionaries into a single dictionary
     period_imbalances = Dict()
     period_hourly_imbalance = Dict()
+    period_bids = Dict()
 
     for thread_dict in values(thread_local_imbalances)
         for (coalition, imbalance) in thread_dict
@@ -201,5 +215,15 @@ function period_imbalance(systemData, clients, startDay, days)
         end
     end
 
-    return period_imbalances, period_hourly_imbalance
+    # Merge bids from all threads
+    for thread_dict in values(thread_local_bids)
+        for (coalition, bid) in thread_dict
+            if !haskey(period_bids, coalition)
+                period_bids[coalition] = zeros(days*24)
+            end    
+            period_bids[coalition] += bid   
+        end
+    end
+
+    return period_imbalances, period_hourly_imbalance, period_bids
 end

@@ -31,20 +31,21 @@ systemData["downreg_price"] = 1
 # First hour 2024-04-16T22:00:00
 # Last hour 2025-04-25T23:00:00
 start_hour = DateTime(2024, 8, 12, 0, 0, 0)
-sim_days = 12
+sim_days = 6
 
 systemData["perfect_demand_forecast"] = false
-systemData["perfect_pv_forecast"] = true
+systemData["perfect_pv_forecast"] = false
 
 imbalances, hourly_imbalances, bids  = @time period_imbalance(systemData, clients_without_missing_data, start_hour, sim_days)
 
 shapley_values = shapley_value(clients_without_missing_data, coalitions, imbalances)
-println("Shapley values: ", shapley_values)
-VCG_taxes = VCG_tax(clients_without_missing_data, imbalances, hourly_imbalances, systemData)
-VCG_utilities = Dict()
+#println("Shapley values: ", shapley_values)
+VCG_taxes, payments = VCG_tax(clients_without_missing_data, imbalances, hourly_imbalances, systemData; alternate_method=false)
+cost_VCG = Dict()
 for client in clients_without_missing_data
-    #VCG_utilities[client] = VCG_taxes[[client]] - imbalances[[client]]
+    cost_VCG[client] = sum(payments[client])+VCG_taxes[[client]]
 end
+
 # Checking stability
 check_stability(shapley_values, imbalances, coalitions)
 
@@ -59,24 +60,27 @@ println("Sum of individual client imbalances: ", individual_imbalance_sum)
 println("Difference: ", grand_coalition_imbalance - individual_imbalance_sum)
 println("Sum of VCG taxes: ", sum(values(VCG_taxes)))
 
-imbalance_fee_total = deepcopy(shapley_values)
+cost_shapley = deepcopy(shapley_values)
 
 start_idx = findfirst(x -> x >= start_hour, systemData["price_prod_demand_df"][!,"HourUTC_datetime"])
 end_idx = start_idx + sim_days * 24 - 1
 dayData = deepcopy(systemData)
 dayData["price_prod_demand_df"] = systemData["price_prod_demand_df"][start_idx:end_idx, :]
-imbalance_fee_MWh = scale_distribution(shapley_values, dayData["price_prod_demand_df"], clients_without_missing_data)
+cost_MWh_shapley = scale_distribution(shapley_values, dayData["price_prod_demand_df"], clients_without_missing_data)
+cost_MWh_VCG = scale_distribution(cost_VCG, dayData["price_prod_demand_df"], clients_without_missing_data)
 # Plot the imbalance fees for each client
 # Plot imbalance fees per MWh
 p_fees_MWh = plot(title="Imbalance Fees per MWh for Clients", xlabel="Client", ylabel="Imbalance Fee per MWh")
-plotKeys = sort(collect(keys(imbalance_fee_MWh)))
-plotValsMWh = [imbalance_fee_MWh[k] for k in plotKeys]
-bar!(p_fees_MWh, plotKeys, plotValsMWh, label="Imbalance Fees per MWh")
+plotKeys = sort(collect(keys(cost_MWh_shapley)))
+plotValsMWh_shapley = [cost_MWh_shapley[k] for k in plotKeys]
+plotValsMWh_VCG = [cost_MWh_VCG[k] for k in plotKeys]
+scatter!(p_fees_MWh, plotKeys, plotValsMWh_shapley, label="Imbalance Fees per MWh Shapley")
+scatter!(p_fees_MWh, plotKeys, plotValsMWh_VCG, label="Imbalance Fees per MWh VCG")
 display(p_fees_MWh)
 
 # Plot total imbalance fees
 p_fees_total = plot(title="Total Imbalance Fees for Clients", xlabel="Client", ylabel="Total Imbalance Fee")
-plotValsTotal = [imbalance_fee_total[k] for k in plotKeys]
+plotValsTotal = [cost_shapley[k] for k in plotKeys]
 bar!(p_fees_total, plotKeys, plotValsTotal, label="Total Imbalance Fees")
 display(p_fees_total)
 

@@ -62,7 +62,7 @@ function check_stability(payoffs, coalition_values, coalitions)
     #end
 end
 
-function VCG_tax(clients, imbalances, hourly_imbalances, systemData)
+function VCG_tax(clients, imbalance_costs, hourly_imbalances, systemData;budget_balance=false)
     # This function calculates the VCG value for each client in the grand coalition
     T = length(hourly_imbalances[[clients[1]]])
     VCG_taxes = Dict()
@@ -82,17 +82,56 @@ function VCG_tax(clients, imbalances, hourly_imbalances, systemData)
     # Payments is a dictionary, keys are coalitions, values are member_payments
     # member_payments is a dictionary, keys are clients, values are arrays of payments for each hour
     payments = @time calculate_payments(clients, hourly_imbalances, systemData["upreg_price"], systemData["downreg_price"])
-    for (idx, i) in enumerate(clients)
-        gc_val_minus_i = 0
-        coalition_without_i = filter(x -> x != clients[idx], grand_coalition)
-        coalition_value_without_i = imbalances[coalition_without_i]
-        gc_val_minus_i = sum(sum(payments[client] for client in grand_coalition if client != i))
-    
-        # Multiplying by -1 because this is a cost reduction game
-        VCG_taxes[[i]] = -(coalition_value_without_i-gc_val_minus_i)
-        #println("Client ", i, " VCG tax: ", VCG_taxes[i], " (Grand coalition value minus i: ", grand_coalition_value_minus_i, ", Coalition value without i: ", coalition_value_without_i, ")")
+    if budget_balance
+        for t in 1:T
+            temp_taxes = Dict()
+            for (idx, i) in enumerate(clients)
+                coalition_without_i = filter(x -> x != clients[idx], grand_coalition)
+                gc_imbalance = hourly_imbalances[grand_coalition][t]
+                gc_val_minus_i = sum(payments[client][t] for client in grand_coalition if client != i)
+                coalition_value_without_i = sum(hourly_imbalances[coalition_without_i][t])
+                if coalition_value_without_i < 0
+                    coalition_value_without_i = abs(coalition_value_without_i)*systemData["upreg_price"]
+                else
+                    coalition_value_without_i = coalition_value_without_i*systemData["downreg_price"]
+                end
+                temp_taxes[i] = -(coalition_value_without_i - gc_val_minus_i)
+            end
+            if sum(values(temp_taxes)) < -0.0001 # Adding a small tolerance to avoid floating point errors
+                subsidies = sum(v for v in values(temp_taxes) if v < 0)
+                taxes = sum(v for v in values(temp_taxes) if v > 0; init=0.0)
+                ratio = taxes / abs(subsidies)
+                for (k, v) in temp_taxes
+                    if v < 0
+                        temp_taxes[k] *= ratio
+                    end
+                end
+            end
+
+            for i in clients
+                # Initialize the key if it doesn't exist
+                if !haskey(VCG_taxes, [i])
+                    VCG_taxes[[i]] = 0.0
+                end
+                # If the imbalance is same sign as grand coalition imbalance, prevent subsidy
+                VCG_taxes[[i]] += temp_taxes[i]
+            end
+            
+            
+        end
+    else
+        for (idx, i) in enumerate(clients)
+            gc_val_minus_i = 0
+            coalition_without_i = filter(x -> x != clients[idx], grand_coalition)
+            coalition_value_without_i = imbalance_costs[coalition_without_i]
+            gc_val_minus_i = sum(sum(payments[client] for client in grand_coalition if client != i))
+        
+            # Multiplying by -1 because this is a cost reduction game
+            VCG_taxes[[i]] = -(coalition_value_without_i-gc_val_minus_i)
+            #println("Client ", i, " VCG tax: ", VCG_taxes[i], " (Grand coalition value minus i: ", grand_coalition_value_minus_i, ", Coalition value without i: ", coalition_value_without_i, ")")
+        end
     end
-    return VCG_taxes
+    return VCG_taxes, payments
 end
 
 function calculate_payments(clients, hourly_imbalances, upreg_price, downreg_price)

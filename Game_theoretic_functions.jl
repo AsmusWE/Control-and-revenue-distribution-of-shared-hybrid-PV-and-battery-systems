@@ -1,4 +1,4 @@
-using Combinatorics
+using Combinatorics, NLsolve
 
 function shapley_value(clients, coalitions, imbalances)
     n = length(clients)
@@ -38,28 +38,24 @@ function scale_distribution(distribution, demand, clients)
     return scaled_distribution
 end
 
-function check_stability(payoffs, coalition_values, coalitions)
+function check_stability(payoffs, coalition_values, clients)
+    coalitions = collect(combinations(clients))
     # Checks if the value of a coalition is larger than their reward as part of the grand coalition
     instabilities = Dict()
     for c in coalitions
-        if coalition_values[c] < sum(payoffs[i] for i in c)-0.000001 # Adding a small tolerance to avoid floating point errors
+        #if coalition_values[c] < sum(payoffs[i] for i in c)-0.000001 # Adding a small tolerance to avoid floating point errors
             instabilities[c] =sum(payoffs[i] for i in c) - coalition_values[c] 
-        end
+        #end
     end
-    if isempty(instabilities)
-        println("No instabilities found.")
-        return
-    end
+    #if isempty(instabilities) || all(values(instabilities) .<= 0)
+        #println("No instabilities found.")
+        #return
+    #end
     max_instability = maximum(values(instabilities))
     max_instability_key = findfirst(x -> x == max_instability, instabilities)
-    println("Maximum instability is for coalition ", max_instability_key, " with value ", max_instability, " corresponding to a ", max_instability / coalition_values[max_instability_key] * 100, "% lower imbalance compared to the grand coalition")
-    #if !isnothing(max_instability_key)
-    #    for client in max_instability_key
-    #        solo_value = coalition_values[[client]]
-    #        payoff_diff = payoffs[client] - solo_value
-    #        println("Client ", client, ": Payoff = ", payoffs[client], ", Operating alone value = ", solo_value, ", Difference = ", payoff_diff)
-    #    end
-    #end
+    #println("Maximum instability is for coalition ", max_instability_key, " with value ", max_instability, " corresponding to a ", max_instability / coalition_values[max_instability_key] * 100, "% lower imbalance compared to the grand coalition")
+    #mean_instability = sum(values(instabilities))/ length(instabilities)
+    return max_instability
 end
 
 function VCG_tax(clients, imbalance_costs, hourly_imbalances, systemData;budget_balance=false)
@@ -87,7 +83,7 @@ function VCG_tax(clients, imbalance_costs, hourly_imbalances, systemData;budget_
             temp_taxes = Dict()
             for (idx, i) in enumerate(clients)
                 coalition_without_i = filter(x -> x != clients[idx], grand_coalition)
-                gc_imbalance = hourly_imbalances[grand_coalition][t]
+                #gc_imbalance = hourly_imbalances[grand_coalition][t]
                 gc_val_minus_i = sum(payments[client][t] for client in grand_coalition if client != i)
                 coalition_value_without_i = sum(hourly_imbalances[coalition_without_i][t])
                 if coalition_value_without_i < 0
@@ -170,4 +166,74 @@ function calculate_payments(clients, hourly_imbalances, upreg_price, downreg_pri
         end
     end
     return member_payments
+end
+
+function gately_point(clients, imbalance_costs)
+    A = length(clients)
+    v_without = zeros(Float64, length(clients))
+    for (idx, i) in enumerate(clients)
+        coalition_without_i = filter(x -> x != clients[idx], clients)
+        v_without[idx] = imbalance_costs[coalition_without_i]
+    end
+    v = zeros(Float64, length(clients))
+    for (idx, i) in enumerate(clients)
+        v[idx] = imbalance_costs[[i]]
+    end
+    total_imbalance = imbalance_costs[clients]
+
+    function f!(F, x)
+        for a in 1:A-1
+            F[a] = ((sum(x[b] for b in 1:A if b != a)-v_without[a])/(x[a]-v[a]) 
+            - (sum(x[b] for b in 1:A if b != (a+1))-v_without[a+1])/(x[a+1]-v[a+1]))
+        end
+        F[A] = sum(x) - total_imbalance
+    end
+
+    sol = nlsolve(f!, zeros(Float64, A))
+    x = sol.zero
+    #println("x: ", x)
+    #for a in 1:A
+    #    println("d: ", (sum(x[b] for b in 1:A if b != a)-v_without[a])/(x[a]-v[a]))
+    #end
+    gately_distribution = Dict(zip(clients, x))
+    return gately_distribution
+end
+
+function full_cost_transfer(clients, hourly_imbalances, systemData)
+    upreg_price = systemData["upreg_price"]
+    downreg_price = systemData["downreg_price"]
+    client_cost = Dict{String, Float64}()
+    imbalance_price = 0
+    for client in clients
+        client_cost[client] = 0.0
+    end
+    for t in 1:length(hourly_imbalances[[clients[1]]])
+        net_imbalance = hourly_imbalances[clients][t]
+        positive_imbalance = sum(max(hourly_imbalances[[client]][t], 0) for client in clients)
+        negative_imbalance = sum(-min(hourly_imbalances[[client]][t], 0) for client in clients)
+        if net_imbalance > 0
+            imbalance_price = downreg_price
+            net_imbalance_cost = net_imbalance * downreg_price
+            # Calculate how much each helping client should get per imbalance
+            compensation_per_imbalance = (positive_imbalance-net_imbalance)*imbalance_price / negative_imbalance
+        else
+            imbalance_price = upreg_price
+            net_imbalance_cost = abs(net_imbalance) * upreg_price
+            compensation_per_imbalance = (negative_imbalance+net_imbalance)*imbalance_price / positive_imbalance
+        end
+        
+        for client in clients
+            if hourly_imbalances[[client]][t]* net_imbalance > 0
+                # Client has an imbalance in the same direction as the net imbalance
+                # Client pays their full cost
+                client_cost[client] += abs(hourly_imbalances[[client]][t]) * imbalance_price 
+            else 
+                # Client counteracts the net imbalance
+                # Client pays nothing and receives what harming clients overpaid
+                client_cost[client] += -(abs(hourly_imbalances[[client]][t]) * compensation_per_imbalance)
+            end
+        end
+    end
+
+    return client_cost
 end

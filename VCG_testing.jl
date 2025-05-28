@@ -1,13 +1,14 @@
-clients = ["A", "B", "C", "D","E"]
+clients = ["A", "B", "C", "D", "E", "F"]
 systemData = Dict("downreg_price" => 1, "upreg_price" => 1)
 downreg_price = systemData["downreg_price"]
 upreg_price = systemData["upreg_price"]
 hourly_imbalances = Dict(
-    ["A"] => [3],
-    ["B"] => [-3],
-    ["C"] => [-2],
-    ["D"] => [12],
-    ["E"] => [-1]
+    ["A"] => [-6],
+    ["B"] => [6],
+    ["C"] => [2],
+    ["D"] => [2],
+    ["E"] => [2],
+    ["F"] => [4]
 )
 # This function calculates the VCG value for each client in the grand coalition
 T = length(hourly_imbalances[[clients[1]]])
@@ -62,7 +63,6 @@ for (idx, i) in enumerate(clients)
     coalition_without_i = filter(x -> x != clients[idx], grand_coalition)
     coalition_value_without_i = imbalances[coalition_without_i]
     gc_val_minus_i = sum(sum(payments[client] for client in grand_coalition if client != i))
-
     # Multiplying by -1 because this is a cost reduction game
     VCG_taxes[[i]] = -(coalition_value_without_i-gc_val_minus_i)
     #println("Client ", i, " VCG tax: ", VCG_taxes[i], " (Grand coalition value minus i: ", grand_coalition_value_minus_i, ", Coalition value without i: ", coalition_value_without_i, ")")

@@ -20,12 +20,10 @@ function shapley_value(clients, coalitions, imbalances)
             else
                 imbalance_without_i = imbalances[c_without_i]
             end
-
             # Calculate the Shapley value contribution for client i in coalition c
             shapley_vals[i] += factorial(S - 1) * factorial(n - S) / factorial(n) * (imbalances[c] - imbalance_without_i)
         end
     end
-
     return shapley_vals
 end
 
@@ -40,17 +38,11 @@ end
 
 function check_stability(payoffs, coalition_values, clients)
     coalitions = collect(combinations(clients))
-    # Checks if the value of a coalition is larger than their reward as part of the grand coalition
+    # Checks how the value of a coalition compares to their reward as part of the grand coalition
     instabilities = Dict()
     for c in coalitions
-        #if coalition_values[c] < sum(payoffs[i] for i in c)-0.000001 # Adding a small tolerance to avoid floating point errors
-            instabilities[c] =sum(payoffs[i] for i in c) - coalition_values[c] 
-        #end
+        instabilities[c] =sum(payoffs[i] for i in c) - coalition_values[c] 
     end
-    #if isempty(instabilities) || all(values(instabilities) .<= 0)
-        #println("No instabilities found.")
-        #return
-    #end
     max_instability = maximum(values(instabilities))
     max_instability_key = findfirst(x -> x == max_instability, instabilities)
     #println("Maximum instability is for coalition ", max_instability_key, " with value ", max_instability, " corresponding to a ", max_instability / coalition_values[max_instability_key] * 100, "% lower imbalance compared to the grand coalition")
@@ -63,27 +55,15 @@ function VCG_tax(clients, imbalance_costs, hourly_imbalances, systemData;budget_
     T = length(hourly_imbalances[[clients[1]]])
     VCG_taxes = Dict()
     grand_coalition = vec(clients)
-    
 
-    # Plot hourly imbalances for all clients
-    #plot()
-    #for client in clients
-    #    plot!(1:T, hourly_imbalances[[client]], label=string(client))
-    #end
-    #xlabel!("Hour")
-    #ylabel!("Imbalance")
-    #title!("Hourly Imbalances for All Clients")
-    #display(current())
-    
     # Payments is a dictionary, keys are coalitions, values are member_payments
     # member_payments is a dictionary, keys are clients, values are arrays of payments for each hour
-    payments = @time calculate_payments(clients, hourly_imbalances, systemData["upreg_price"], systemData["downreg_price"])
+    payments = calculate_payments(clients, hourly_imbalances, systemData["upreg_price"], systemData["downreg_price"])
     if budget_balance
         for t in 1:T
             temp_taxes = Dict()
             for (idx, i) in enumerate(clients)
                 coalition_without_i = filter(x -> x != clients[idx], grand_coalition)
-                #gc_imbalance = hourly_imbalances[grand_coalition][t]
                 gc_val_minus_i = sum(payments[client][t] for client in grand_coalition if client != i)
                 coalition_value_without_i = sum(hourly_imbalances[coalition_without_i][t])
                 if coalition_value_without_i < 0
@@ -103,7 +83,6 @@ function VCG_tax(clients, imbalance_costs, hourly_imbalances, systemData;budget_
                     end
                 end
             end
-
             for i in clients
                 # Initialize the key if it doesn't exist
                 if !haskey(VCG_taxes, [i])
@@ -112,8 +91,6 @@ function VCG_tax(clients, imbalance_costs, hourly_imbalances, systemData;budget_
                 # If the imbalance is same sign as grand coalition imbalance, prevent subsidy
                 VCG_taxes[[i]] += temp_taxes[i]
             end
-            
-            
         end
     else
         for (idx, i) in enumerate(clients)
@@ -131,18 +108,7 @@ function VCG_tax(clients, imbalance_costs, hourly_imbalances, systemData;budget_
 end
 
 function calculate_payments(clients, hourly_imbalances, upreg_price, downreg_price)
-
-    # Extend hourly_imbalances to include all possible combinations of clients
-    #coalitions = collect(combinations(clients))
     T = length(hourly_imbalances[[clients[1]]])
-    #for k in 2:length(clients)
-    #    for combo in coalitions
-    #        key = collect(combo)  # Use a Vector like ["A", "B"]
-    #        # Sum the imbalances for each client in the combination at each hour
-    #        imbalance_sum = [sum(hourly_imbalances[[c]][t] for c in combo) for t in 1:length(hourly_imbalances[[clients[1]]])]
-    #        hourly_imbalances[key] = imbalance_sum
-    #    end
-    #end
 
     # Only calculate payments for the grand coalition
     coalition = clients
@@ -191,10 +157,6 @@ function gately_point(clients, imbalance_costs)
 
     sol = nlsolve(f!, zeros(Float64, A))
     x = sol.zero
-    #println("x: ", x)
-    #for a in 1:A
-    #    println("d: ", (sum(x[b] for b in 1:A if b != a)-v_without[a])/(x[a]-v[a]))
-    #end
     gately_distribution = Dict(zip(clients, x))
     return gately_distribution
 end

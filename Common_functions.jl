@@ -25,31 +25,6 @@ function generate_coalitions(clients, only_VCG=false)
     end
 end
 
-function check_stability(payoffs, coalition_values, coalitions)
-    # Checks if the value of a coalition is larger than their reward as part of the grand coalition
-    instabilities = Dict()
-    for c in coalitions
-        if coalition_values[c] > sum(payoffs[i] for i in c)+0.01 # Adding a small tolerance to avoid floating point errors
-            instabilities[c] = coalition_values[c] - sum(payoffs[i] for i in c) 
-        end
-    end
-    if isempty(instabilities)
-        println("No instabilities found.")
-        return
-    end
-    max_instability = maximum(values(instabilities))
-    max_instability_key = findfirst(x -> x == max_instability, instabilities)
-    println("Maximum instability is for coalition ", max_instability_key, " with value ", max_instability, " corresponding to operating in the grand coalition giving ", 100+max_instability / coalition_values[max_instability_key] * 100, "% of the revenue of operating in this coalition")
-    #if !isnothing(max_instability_key)
-    #    for client in max_instability_key
-    #        solo_value = coalition_values[[client]]
-    #        payoff_diff = payoffs[client] - solo_value
-    #        println("Client ", client, ": Payoff = ", payoffs[client], ", Operating alone value = ", solo_value, ", Difference = ", payoff_diff)
-    #    end
-    #end
-end
-
-
 function test_load_data()
     all_clients = range(1, stop=10)
     T = 24

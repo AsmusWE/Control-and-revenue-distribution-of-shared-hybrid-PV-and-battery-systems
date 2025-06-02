@@ -1,4 +1,4 @@
-using Combinatorics, NLsolve
+using Combinatorics, NLsolve, HiGHS, JuMP
 
 function shapley_value(clients, coalitions, imbalances)
     n = length(clients)
@@ -38,14 +38,17 @@ end
 
 function check_stability(payoffs, coalition_values, clients)
     coalitions = collect(combinations(clients))
+    grand_coalition = vec(clients)
+    # Remove the grand coalition from the list of coalitions
+    coalitions = filter(c -> Set(c) != Set(grand_coalition), coalitions)
     # Checks how the value of a coalition compares to their reward as part of the grand coalition
     instabilities = Dict()
-    for c in coalitions
+    for c in coalitions 
         instabilities[c] =sum(payoffs[i] for i in c) - coalition_values[c] 
     end
     max_instability = maximum(values(instabilities))
     max_instability_key = findfirst(x -> x == max_instability, instabilities)
-    #println("Maximum instability is for coalition ", max_instability_key, " with value ", max_instability, " corresponding to a ", max_instability / coalition_values[max_instability_key] * 100, "% lower imbalance compared to the grand coalition")
+    println("Maximum instability is for coalition ", max_instability_key, " with value ", max_instability, " corresponding to a ", max_instability / coalition_values[max_instability_key] * 100, "% lower imbalance compared to the grand coalition")
     #mean_instability = sum(values(instabilities))/ length(instabilities)
     return max_instability
 end
@@ -198,4 +201,102 @@ function full_cost_transfer(clients, hourly_imbalances, systemData)
     end
 
     return client_cost
+end
+
+function nucleolus(clients, imbalances)
+    coalitions = collect(combinations(clients))
+    locked_excesses = Dict{Vector{String}, Float64}()
+    payments = Dict{Vector{String}, Float64}()
+    new_locked_excesses = Dict{Vector{String}, Float64}()
+    while true
+        try
+            max_excess, new_locked_excesses, payments = nucleolus_optimize(clients, imbalances, locked_excesses)
+        catch e
+            if length(locked_excesses) == length(coalitions) - 1
+                println("All coalitions are locked, the nucleolus has been found")
+                return locked_excesses, payments
+            else
+                println("An error occurred: ", e)
+                return nothing, nothing
+            end
+        end
+        # Update locked excesses with the new ones
+        for (coalition, excess) in new_locked_excesses
+            locked_excesses[coalition] = excess
+        end
+        #println("Locked excesses updated: ", locked_excesses)
+    end
+end
+
+function nucleolus_optimize(clients, imbalances, locked_excesses)
+    # This function calculates the nucleolus for the given clients and imbalances
+    coalitions = collect(combinations(clients))
+    coalition_indices = [findall(x -> x in c, clients) for c in coalitions]
+    locked_coalitions = keys(locked_excesses)
+    locked_indices = [findfirst(x -> Set(x) == Set(c), coalitions) for c in locked_coalitions]
+    grand_coalition = vec(clients)
+    gc_idx = findfirst(x -> Set(x) == Set(grand_coalition), coalitions)
+    A = length(clients)
+    C = length(coalitions)
+
+    # Initialize the optimization model
+    model = Model(HiGHS.Optimizer)
+    #model = Model(Gurobi.Optimizer)
+    #set_optimizer_attribute(model, "OutputFlag", 0)
+    set_silent(model)
+
+    @variable(model, payment[1:A]) # Payments for each agent
+    @variable(model, max_excess) # Maximum excess for the nucleolus 
+
+    @objective(model, Min, max_excess) # Objective function
+
+    # Calculate excess for each coalition
+    # Excess is how much more the coalitions pays as part of the grand coalition compared to the coalition value
+    # The excess of each coalition must be less than or equal to the maximum excess
+    @constraint(model, excess_cons[c = 1:C; c != gc_idx && !(c in locked_indices)],
+                sum(payment[i] for i in coalition_indices[c]) - imbalances[coalitions[c]] <=  max_excess)
+    
+    # Enforce collective rationality
+    @constraint(model, sum(payment) == imbalances[grand_coalition])
+
+    # Enforce locked excesses
+    @constraint(model, [c = locked_indices],
+                sum(payment[i] for i in coalition_indices[c]) - imbalances[coalitions[c]] == locked_excesses[coalitions[c]])
+
+    solution = optimize!(model)
+    if termination_status(model) == MOI.OPTIMAL
+        #println("Optimal solution found")
+        #println("Objective value: ", objective_value(model))
+        #println("Dual values of excess constraints: ", dual.(excess_cons))
+        dual_values = dual.(excess_cons)
+        new_locked_excesses = Dict{Vector{String}, Float64}()
+        for i in eachindex(dual_values)
+            if dual_values[i] < -1e-6 # Check if the dual value is negative
+                #println("Negative dual value for coalition ", coalitions[i[1]], ": ", dual_values[i])
+                # Lock the excess for this coalition
+                new_locked_excesses[coalitions[i[1]]] = objective_value(model)
+            end
+        end
+        payments = Dict{Vector{String}, Float64}()
+        for (idx, client) in enumerate(clients)
+            payments[[client]] = value.(payment[idx])
+        end
+        return objective_value(model), new_locked_excesses, payments
+    else
+        println("No optimal solution found")
+        println("Checking if all coalitions are locked...")
+        found = false
+        # The problem is unbounded if all coalitions are locked, so we check if that is the case
+        for c in 1:C
+            if c != gc_idx && !(c in locked_indices)
+                println(coalitions[c])
+                found = true
+            end
+        end
+        if found
+            println("Not all coalitions are locked, the problem is unbounded and there is an error")
+        else
+            println("All coalitions are locked, the nucleolus has been found")
+        end
+    end
 end

@@ -1,3 +1,4 @@
+using Plots
 function plot_results(
     systemData,
     allocation_costs,
@@ -14,6 +15,8 @@ function plot_results(
     cost_VCG = allocation_costs["VCG"]
     cost_gately = allocation_costs["gately"]
     cost_full_cost = allocation_costs["full_cost"]
+    cost_reduced_cost = allocation_costs["reduced_cost"]
+    cost_nucleolus = allocation_costs["nucleolus"]
     # Calculating cost per imbalance cost per MWh
     start_idx = findfirst(x -> x >= start_hour, systemData["price_prod_demand_df"][!,"HourUTC_datetime"])
     end_idx = start_idx + sim_days * 24 - 1
@@ -33,6 +36,8 @@ function plot_results(
     cost_MWh_VCG = scale_distribution(cost_VCG, dayData["price_prod_demand_df"], clients_without_missing_data)
     cost_MWh_gately = scale_distribution(cost_gately, dayData["price_prod_demand_df"], clients_without_missing_data)
     cost_MWh_full_cost = scale_distribution(cost_full_cost, dayData["price_prod_demand_df"], clients_without_missing_data)
+    cost_MWh_reduced_cost = scale_distribution(cost_reduced_cost, dayData["price_prod_demand_df"], clients_without_missing_data)
+    cost_MWh_nucleolus = scale_distribution(cost_nucleolus, dayData["price_prod_demand_df"], clients_without_missing_data)
     # Plot the imbalance fees for each client
     # Plot imbalance fees per MWh
     p_fees_MWh = plot(title="Imbalance Fees per MWh for Clients", xlabel="Client", ylabel="Imbalance Fee per MWh", xticks=(1:length(plotKeys), plotKeys), xrotation=45)
@@ -40,10 +45,14 @@ function plot_results(
     plotValsMWh_VCG = [cost_MWh_VCG[k] for k in plotKeys]
     plotValsMWh_gately = [cost_MWh_gately[k] for k in plotKeys]
     plotValsMWh_full_cost = [cost_MWh_full_cost[k] for k in plotKeys]
+    plotValsMWh_reduced_cost = [cost_MWh_reduced_cost[k] for k in plotKeys]
+    plotValsMWh_nucleolus = [cost_MWh_nucleolus[k] for k in plotKeys]
     scatter!(p_fees_MWh, 1:length(plotKeys), plotValsMWh_shapley, label="Imbalance Fees per MWh Shapley")
     scatter!(p_fees_MWh, 1:length(plotKeys), plotValsMWh_VCG, label="Imbalance Fees per MWh VCG")
     scatter!(p_fees_MWh, 1:length(plotKeys), plotValsMWh_gately, label="Imbalance Fees per MWh Gately")
     scatter!(p_fees_MWh, 1:length(plotKeys), plotValsMWh_full_cost, label="Imbalance Fees per MWh Full Cost Transfer")
+    scatter!(p_fees_MWh, 1:length(plotKeys), plotValsMWh_reduced_cost, label="Imbalance Fees per MWh Reduced Cost")
+    scatter!(p_fees_MWh, 1:length(plotKeys), plotValsMWh_nucleolus, label="Imbalance Fees per MWh Nucleolus")
     display(p_fees_MWh)
 
     # Plot total imbalance fees
@@ -52,10 +61,14 @@ function plot_results(
     plotVals_VCG = [cost_VCG[k] for k in plotKeys]
     plotVals_gately = [cost_gately[k] for k in plotKeys]
     plotVals_full_cost = [cost_full_cost[k] for k in plotKeys]
+    plotVals_reduced_cost = [cost_reduced_cost[k] for k in plotKeys]
+    plotVals_nucleolus = [cost_nucleolus[k] for k in plotKeys]
     scatter!(p_fees_total, 1:length(plotKeys), plotVals_shapley, label="Total Imbalance Fees Shapley")
     scatter!(p_fees_total, 1:length(plotKeys), plotVals_VCG, label="Total Imbalance Fees VCG")
     scatter!(p_fees_total, 1:length(plotKeys), plotVals_gately, label="Total Imbalance Fees Gately")
     scatter!(p_fees_total, 1:length(plotKeys), plotVals_full_cost, label="Total Imbalance Fees Full Cost Transfer")
+    scatter!(p_fees_total, 1:length(plotKeys), plotVals_reduced_cost, label="Total Imbalance Fees Reduced Cost")
+    scatter!(p_fees_total, 1:length(plotKeys), plotVals_nucleolus, label="Total Imbalance Fees Nucleolus")
     display(p_fees_total)
 
     # Plot cost per MWh imbalance
@@ -63,21 +76,29 @@ function plot_results(
     cost_imbalance_VCG = Dict{String, Float64}()
     cost_imbalance_gately = Dict{String, Float64}()
     cost_imbalance_full_cost = Dict{String, Float64}()
+    cost_imbalance_reduced_cost = Dict{String, Float64}()
+    cost_imbalance_nucleolus = Dict{String, Float64}()
     for client in plotKeys
         cost_imbalance_shapley[client] = cost_shapley[client] / imbalances[[client]]
         cost_imbalance_VCG[client] = cost_VCG[client] / imbalances[[client]]
         cost_imbalance_gately[client] = cost_gately[client] / imbalances[[client]]
         cost_imbalance_full_cost[client] = cost_full_cost[client] / imbalances[[client]]
+        cost_imbalance_reduced_cost[client] = cost_reduced_cost[client] / imbalances[[client]]
+        cost_imbalance_nucleolus[client] = cost_nucleolus[client] / imbalances[[client]]
     end
     p_imbalance_cost = plot(title="Cost per MWh Imbalance for Clients", xlabel="Client", ylabel="Cost per MWh Imbalance", xticks=(1:length(plotKeys), plotKeys), xrotation=45)
     plotVals_imbalance_shapley = [cost_imbalance_shapley[k] for k in plotKeys]
     plotVals_imbalance_VCG = [cost_imbalance_VCG[k] for k in plotKeys]
     plotVals_imbalance_gately = [cost_imbalance_gately[k] for k in plotKeys]
     plotVals_imbalance_full_cost = [cost_imbalance_full_cost[k] for k in plotKeys]
+    plotVals_imbalance_reduced_cost = [cost_imbalance_reduced_cost[k] for k in plotKeys]
+    plotVals_imbalance_nucleolus = [cost_imbalance_nucleolus[k] for k in plotKeys]
     scatter!(p_imbalance_cost, 1:length(plotKeys), plotVals_imbalance_shapley, label="Cost per MWh Imbalance Shapley")
     scatter!(p_imbalance_cost, 1:length(plotKeys), plotVals_imbalance_VCG, label="Cost per MWh Imbalance VCG")
     scatter!(p_imbalance_cost, 1:length(plotKeys), plotVals_imbalance_gately, label="Cost per MWh Imbalance Gately")
     scatter!(p_imbalance_cost, 1:length(plotKeys), plotVals_imbalance_full_cost, label="Cost per MWh Imbalance Full Cost Transfer")
+    scatter!(p_imbalance_cost, 1:length(plotKeys), plotVals_imbalance_reduced_cost, label="Cost per MWh Imbalance Reduced Cost")
+    scatter!(p_imbalance_cost, 1:length(plotKeys), plotVals_imbalance_nucleolus, label="Cost per MWh Imbalance Nucleolus")
     display(p_imbalance_cost)
 
     # Plot aggregate demand, PV production, bids, and imbalance

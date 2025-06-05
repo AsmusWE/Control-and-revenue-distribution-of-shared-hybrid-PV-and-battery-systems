@@ -48,7 +48,7 @@ function check_stability(payoffs, coalition_values, clients)
     end
     max_instability = maximum(values(instabilities))
     max_instability_key = findfirst(x -> x == max_instability, instabilities)
-    println("Maximum instability is for coalition ", max_instability_key, " with value ", max_instability, " corresponding to a ", max_instability / coalition_values[max_instability_key] * 100, "% lower imbalance compared to the grand coalition")
+    #println("Maximum instability is for coalition ", max_instability_key, " with value ", max_instability, " corresponding to a ", max_instability / coalition_values[max_instability_key] * 100, "% lower imbalance compared to the grand coalition")
     #mean_instability = sum(values(instabilities))/ length(instabilities)
     return max_instability
 end
@@ -165,10 +165,48 @@ function gately_point(clients, imbalance_costs)
 end
 
 function full_cost_transfer(clients, hourly_imbalances, systemData)
+    # Initializing
     upreg_price = systemData["upreg_price"]
     downreg_price = systemData["downreg_price"]
     client_cost = Dict{String, Float64}()
     imbalance_price = 0
+    for client in clients
+        client_cost[client] = 0.0
+    end
+    # Calculating cost for every hour
+    for t in 1:length(hourly_imbalances[[clients[1]]])
+        net_imbalance = hourly_imbalances[clients][t]
+        #positive_imbalance = sum(max(hourly_imbalances[[client]][t], 0) for client in clients)
+        #negative_imbalance = sum(-min(hourly_imbalances[[client]][t], 0) for client in clients)
+        # # Calculate how much each helping client should get per imbalance
+        if net_imbalance > 0
+            imbalance_price = downreg_price
+            #net_imbalance_cost = net_imbalance * downreg_price
+        else
+            imbalance_price = upreg_price
+            #net_imbalance_cost = abs(net_imbalance) * upreg_price
+        end
+        # Check each client if they are helping or not, and calculate their cost
+        for client in clients
+            if hourly_imbalances[[client]][t]* net_imbalance > 0
+                # Client has an imbalance in the same direction as the net imbalance
+                # Client pays their full cost
+                client_cost[client] += abs(hourly_imbalances[[client]][t]) * imbalance_price 
+            else 
+                # Client counteracts the net imbalance
+                # Client pays nothing and gets compensated for reducing the imbalance
+                client_cost[client] += -(abs(hourly_imbalances[[client]][t]) * imbalance_price)
+            end
+        end
+    end
+
+    return client_cost
+end
+
+function reduced_cost(clients, hourly_imbalances, systemData)
+    upreg_price = systemData["upreg_price"]
+    downreg_price = systemData["downreg_price"]
+    client_cost = Dict{String, Float64}()
     for client in clients
         client_cost[client] = 0.0
     end
@@ -178,35 +216,32 @@ function full_cost_transfer(clients, hourly_imbalances, systemData)
         negative_imbalance = sum(-min(hourly_imbalances[[client]][t], 0) for client in clients)
         if net_imbalance > 0
             imbalance_price = downreg_price
-            net_imbalance_cost = net_imbalance * downreg_price
-            # Calculate how much each helping client should get per imbalance
-            compensation_per_imbalance = (positive_imbalance-net_imbalance)*imbalance_price / negative_imbalance
+            #net_imbalance_cost = net_imbalance * downreg_price
+            cost_per_imbalance = (net_imbalance/positive_imbalance) * imbalance_price
         else
             imbalance_price = upreg_price
-            net_imbalance_cost = abs(net_imbalance) * upreg_price
-            compensation_per_imbalance = (negative_imbalance+net_imbalance)*imbalance_price / positive_imbalance
+            #net_imbalance_cost = abs(net_imbalance) * upreg_price
+            cost_per_imbalance = (abs(net_imbalance)/negative_imbalance) * imbalance_price
         end
-        
         for client in clients
-            if hourly_imbalances[[client]][t]* net_imbalance > 0
-                # Client has an imbalance in the same direction as the net imbalance
-                # Client pays their full cost
-                client_cost[client] += abs(hourly_imbalances[[client]][t]) * imbalance_price 
-            else 
-                # Client counteracts the net imbalance
-                # Client pays nothing and receives what harming clients overpaid
-                client_cost[client] += -(abs(hourly_imbalances[[client]][t]) * compensation_per_imbalance)
+            client_imb = hourly_imbalances[[client]][t]
+            # Check if client harms (same sign as net imbalance and not zero)
+            if client_imb * net_imbalance > 0 && net_imbalance != 0
+                client_cost[client] += abs(client_imb) * cost_per_imbalance
+            else
+                # Helping clients pay 0
+                client_cost[client] += 0.0
             end
         end
     end
-
     return client_cost
 end
+
 
 function nucleolus(clients, imbalances)
     coalitions = collect(combinations(clients))
     locked_excesses = Dict{Vector{String}, Float64}()
-    payments = Dict{Vector{String}, Float64}()
+    payments = Dict{String, Float64}()
     new_locked_excesses = Dict{Vector{String}, Float64}()
     while true
         try
@@ -277,9 +312,9 @@ function nucleolus_optimize(clients, imbalances, locked_excesses)
                 new_locked_excesses[coalitions[i[1]]] = objective_value(model)
             end
         end
-        payments = Dict{Vector{String}, Float64}()
+        payments = Dict{String, Float64}()
         for (idx, client) in enumerate(clients)
-            payments[[client]] = value.(payment[idx])
+            payments[client] = value.(payment[idx])
         end
         return objective_value(model), new_locked_excesses, payments
     else

@@ -32,23 +32,31 @@ sim_days = 36
 # Accepted forecast types: "perfect", "scenarios", "noise"
 systemData["demand_forecast"] = "noise"
 systemData["pv_forecast"] = "noise"
-
+println("Imbalance calculation time, all coalitions :")
 imbalances, hourly_imbalances, bids  = @time period_imbalance(systemData, clients, start_hour, sim_days; threads = false)
 
 allocation_costs = Dict{String, Dict{String, Float64}}()
 # Calculating allocations
-shapley_values = shapley_value(clients, coalitions, imbalances)
+println("Calculating allocations...")
+println("Shapley calculation time:")
+shapley_values = @time shapley_value(clients, coalitions, imbalances)
 allocation_costs["shapley"] = deepcopy(shapley_values)
 #println("Shapley values: ", shapley_values)
-VCG_taxes, payments = VCG_tax(clients, imbalances, hourly_imbalances, systemData; budget_balance=true)
+println("VCG calculation time:")
+VCG_taxes, payments = @time VCG_tax(clients, imbalances, hourly_imbalances, systemData; budget_balance=true)
 allocation_costs["VCG"] = Dict()
 for client in clients
     allocation_costs["VCG"][client] = sum(payments[client])+VCG_taxes[[client]]
 end
-gately_values = gately_point(clients, imbalances)
+println("Gately calculation time:")
+gately_values = @time gately_point(clients, imbalances)
 allocation_costs["gately"] = deepcopy(gately_values)
-full_cost_transfer_values = full_cost_transfer(clients, hourly_imbalances, systemData)
+println("Full cost transfer calculation time:")
+full_cost_transfer_values = @time full_cost_transfer(clients, hourly_imbalances, systemData)
 allocation_costs["full_cost"] = deepcopy(full_cost_transfer_values)
+println("Nucleolus calculation time:")
+___ , nucleolus_values = @time nucleolus(clients, imbalances)
+allocation_costs["nucleolus"] = deepcopy(nucleolus_values)
 
 # Checking stability
 max_instability = Dict{String, Float64}()
@@ -56,6 +64,7 @@ max_instability["shapley"] = check_stability(allocation_costs["shapley"], imbala
 max_instability["VCG"] = check_stability(allocation_costs["VCG"], imbalances, clients)
 max_instability["gately"] = check_stability(allocation_costs["gately"], imbalances, clients)
 max_instability["full_cost"] = check_stability(allocation_costs["full_cost"], imbalances, clients)
+max_instability["nucleolus"] = check_stability(allocation_costs["nucleolus"], imbalances, clients)
 println("Max instabilities: ", max_instability)
 
 # Compare the sum of individual client imbalances with the grand coalition imbalance

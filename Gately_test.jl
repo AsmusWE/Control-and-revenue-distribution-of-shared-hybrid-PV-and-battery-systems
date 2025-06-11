@@ -23,4 +23,5 @@ x = sol.zero
 println("x: ", x)
 for a in 1:A
     println("d: ", (sum(x[b] for b in 1:A if b != a)-v_without[a])/(x[a]-v[a]))
+    println("x[a]: ", x[a])
 end

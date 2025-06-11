@@ -12,13 +12,15 @@ function optimize_imbalance(coalition, systemData)
     clientPVOwnership = getindex.(Ref(systemData["clientPVOwnership"]), coalition)
     #clientBatteryOwnership = getindex.(Ref(systemData["clientBatteryOwnership"]), coalition)
     TimeHorizon = 24 # Hours optimized
+    first_hour = systemData["price_prod_demand_df"][1, "HourUTC_datetime"]
+    weekday = dayofweek(first_hour)  # 1=Monday, 7=Sunday
     
     if systemData["demand_forecast"] == "perfect"
         # Demand forecast is perfect, use actual demand data
         demand = sum(systemData["price_prod_demand_df"][1:TimeHorizon, client] for client in coalition)
     elseif systemData["demand_forecast"] == "scenarios"
         # Demand forecast is not perfect, use forecast data
-        demand = sum(systemData["demand_scenarios"][c] for c in coalition)
+        demand = sum(systemData["demand_scenarios"][c,weekday] for c in coalition)
     elseif systemData["demand_forecast"] == "noise"
         # Forecast is set as the actual demand with added noise
         demand = sum(systemData["price_prod_demand_df"][1:TimeHorizon, client] for client in coalition) .* (1 .+ 0.1*randn(TimeHorizon, 1))

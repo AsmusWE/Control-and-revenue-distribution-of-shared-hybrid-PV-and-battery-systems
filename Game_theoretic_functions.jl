@@ -1,4 +1,60 @@
-using Combinatorics, NLsolve, HiGHS, JuMP
+using Combinatorics, NLsolve, HiGHS, JuMP, Gurobi
+# Initializing the Gurobi environment
+# This is necessary to surpress some of the Gurobi output
+const GUROBI_ENV = Gurobi.Env()
+
+
+function calculate_allocations(
+    allocations, clients, coalitions, imbalances, hourly_imbalances, systemData
+    )
+    # Calculates all the allocations specified in the allocations list
+    # This could probably have been done better...
+    allocation_costs = Dict{String, Any}()
+    if "shapley" in allocations
+        println("Shapley calculation time:")
+        allocation_costs["shapley"] = @time shapley_value(clients, coalitions, imbalances)
+    end
+    if "VCG" in allocations
+        println("VCG calculation time:")
+        allocation_costs["VCG"] = @time VCG_tax(clients, imbalances, hourly_imbalances, systemData; budget_balance=false)
+    end
+    if "VCG_budget_balanced" in allocations
+        println("VCG budget balanced calculation time:")
+        allocation_costs["VCG_budget_balanced"] = @time VCG_tax(clients, imbalances, hourly_imbalances, systemData; budget_balance=true)
+    end
+    if "gately_full" in allocations
+        println("Gately calculation time, full period:")
+        gately_full_values = @time gately_point(clients, imbalances)
+        allocation_costs["gately_full"] = deepcopy(gately_full_values)
+    end
+    if "gately_daily" in allocations
+        println("Gately calculation time, daily:")
+        gately_daily_values = @time gately_point_daily(clients, hourly_imbalances, systemData)
+        allocation_costs["gately_daily"] = deepcopy(gately_daily_values)
+    end
+    if "gately_hourly" in allocations
+        println("Gately calculation time, hourly:")
+        gately_hourly_values = @time gately_point_hourly(clients, hourly_imbalances, systemData)
+        allocation_costs["gately_hourly"] = deepcopy(gately_hourly_values)
+    end
+    if "full_cost" in allocations
+        println("Full cost transfer calculation time:")
+        full_cost_transfer_values = @time full_cost_transfer(clients, hourly_imbalances, systemData)
+        allocation_costs["full_cost"] = deepcopy(full_cost_transfer_values)
+    end
+    if "reduced_cost" in allocations
+        println("reduced cost calculation time:")
+        reduced_cost_values = @time reduced_cost(clients, hourly_imbalances, systemData)
+        allocation_costs["reduced_cost"] = deepcopy(reduced_cost_values)
+    end
+    if "nucleolus" in allocations
+        println("Nucleolus calculation time:")
+        ___ , nucleolus_values = @time nucleolus(clients, imbalances)
+        allocation_costs["nucleolus"] = deepcopy(nucleolus_values)
+    end
+    return allocation_costs
+end
+
 
 function shapley_value(clients, coalitions, imbalances)
     n = length(clients)
@@ -107,7 +163,12 @@ function VCG_tax(clients, imbalance_costs, hourly_imbalances, systemData;budget_
             #println("Client ", i, " VCG tax: ", VCG_taxes[i], " (Grand coalition value minus i: ", grand_coalition_value_minus_i, ", Coalition value without i: ", coalition_value_without_i, ")")
         end
     end
-    return VCG_taxes, payments
+    VCG_utilities = Dict{String, Float64}()
+    for client in clients
+        VCG_utilities[client] = sum(payments[client])+VCG_taxes[[client]]
+    end
+
+    return VCG_utilities
 end
 
 function calculate_payments(clients, hourly_imbalances, upreg_price, downreg_price)
@@ -150,17 +211,121 @@ function gately_point(clients, imbalance_costs)
     end
     total_imbalance = imbalance_costs[clients]
 
-    function f!(F, x)
-        for a in 1:A-1
-            F[a] = ((sum(x[b] for b in 1:A if b != a)-v_without[a])/(x[a]-v[a]) 
-            - (sum(x[b] for b in 1:A if b != (a+1))-v_without[a+1])/(x[a+1]-v[a+1]))
-        end
-        F[A] = sum(x) - total_imbalance
+    # Initialize the optimization model
+    model = Model(() -> Gurobi.Optimizer(GUROBI_ENV))
+    #set_optimizer_attribute(model, "OutputFlag", 0)
+    set_silent(model)
+    #set_optimizer_attribute(model, "DualReductions", 0)
+    #set_optimizer_attribute(model, "Presolve", 0)
+    total_imbalance = sum(values(imbalance_costs))
+    @variable(model, payment[1:A]) # Payments for each agent
+    @variable(model, d[1:A]) # propensity to disrupt for each agent
+    @variable(model, max_d) # Maximum propensity to disrupt
+
+    @objective(model, Min, max_d) # Objective function
+
+
+    @constraint(model, [a = 1:A],
+                (sum(payment[b] for b in 1:A if b != a) - v_without[a]) / (payment[a] - v[a]) == d[a])
+    
+    # Enforce collective rationality
+    @constraint(model, sum(payment) == total_imbalance)
+
+    # Enforce maximum propensity to disrupt
+    @constraint(model, [a = 1:A], d[a] <= max_d)
+
+    # Enforce individual rationality
+    @constraint(model, [a = 1:A], payment[a] <= v[a]) 
+
+    # Enforce that all propensities are equal (not strictly necessary, but helps covergence)
+    @constraint(model, [a = 1:A; a != A], d[a] == d[a + 1])
+
+    # Solve the model
+    optimize!(model)
+    if termination_status(model) != MOI.OPTIMAL
+        println("No optimal solution found for Gately point")
+        return nothing
+    end
+    
+    # Extract the solution
+    gately_distribution = Dict{String, Float64}()
+    for (idx, client) in enumerate(clients)
+        gately_distribution[client] = value(payment[idx])
     end
 
-    sol = nlsolve(f!, zeros(Float64, A))
-    x = sol.zero
-    gately_distribution = Dict(zip(clients, x))
+    return gately_distribution
+
+    # function f!(F, x)
+    #     for a in 1:A-1
+    #         F[a] = ((sum(x[b] for b in 1:A if b != a)-v_without[a])/(x[a]-v[a]) 
+    #         - (sum(x[b] for b in 1:A if b != (a+1))-v_without[a+1])/(x[a+1]-v[a+1]))
+    #     end
+    #     F[A] = sum(x) - total_imbalance
+    # end
+
+    # sol = nlsolve(f!, zeros(Float64, A))
+    # x = sol.zero
+    # gately_distribution = Dict(zip(clients, x))
+    # # Print the value of this for all clients
+    # for a in 1:A
+    #     println("Client ", a, ": ", ((sum(x[b] for b in 1:A if b != a) - v_without[a]) / (x[a] - v[a])))
+    #     println("x[a]: ", x[a])
+    # end
+    return gately_distribution
+end
+
+function gately_point_daily(clients, hourly_imbalances, systemData)
+    upreg_price = systemData["upreg_price"]
+    downreg_price = systemData["downreg_price"]
+    coalitions = collect(combinations(clients))
+    gately_distribution = Dict()
+    for client in clients
+        gately_distribution[client] = 0.0
+    end
+    for day in 1:Int(length(hourly_imbalances[[clients[1]]]) / 24)
+        #println("Calculating Gately point for day ", day)
+        imbalance_costs = Dict()
+        for coalition in coalitions
+            # Calculate the imbalance costs for the coalition for the day
+            temp_cost = sum(hourly_imbalances[[c]][(day-1)*24+1:day*24] for c in coalition)
+            # temp_cost is a vector, so multiply each value accordingly and sum
+            imbalance_costs[coalition] = sum(x < 0 ? abs(x) * upreg_price : x * downreg_price for x in temp_cost)
+            
+        end
+        # Calculate the Gately point for the day
+        gately_distribution_day = gately_point(clients, imbalance_costs)
+        # Add the daily Gately point to the overall distribution
+        for client in clients
+            gately_distribution[client] += gately_distribution_day[client]
+        end
+    end
+    return gately_distribution
+end
+
+function gately_point_hourly(clients, hourly_imbalances, systemData)
+    upreg_price = systemData["upreg_price"]
+    downreg_price = systemData["downreg_price"]
+    coalitions = collect(combinations(clients))
+    gately_distribution = Dict{String, Float64}()
+    T = length(hourly_imbalances[[clients[1]]])
+    for client in clients
+        gately_distribution[client] = 0.0
+    end
+    for t in 1:T
+        imbalance_costs = Dict()
+        for coalition in coalitions
+            temp_cost = sum(hourly_imbalances[[c]][t] for c in coalition)
+            if temp_cost < 0
+                imbalance_costs[coalition] = abs(temp_cost) * upreg_price
+            else
+                imbalance_costs[coalition] = temp_cost * downreg_price
+            end
+        end
+        gately_distribution_hour = gately_point(clients, imbalance_costs)
+        for client in clients
+            gately_distribution[client] += gately_distribution_hour[client]
+        end
+    end
     return gately_distribution
 end
 

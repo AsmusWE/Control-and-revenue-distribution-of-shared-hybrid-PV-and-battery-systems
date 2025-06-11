@@ -108,13 +108,17 @@ function load_data(;batCap = 100.0, initSoC = 0.0)
         missing_data_counts[client] = count(ismissing, demand[:, client])
     end
     clients_without_missing_data = filter(client -> missing_data_counts[client] == 0, clients)
-    println("Clients without missing data: ", clients_without_missing_data)
+    #println("Clients without missing data: ", clients_without_missing_data)
 
     # Dropping columns with missing values
     #demand = select!(demand, Not([:"C",:"P",:"B",:"M",:"D",:"E",:"R"]))
 
     # Remove weekend hours from combinedData
-    combinedData = filter(row -> dayofweek(row[:HourUTC_datetime]) in 1:4, combinedData)
+    #combinedData = filter(row -> dayofweek(row[:HourUTC_datetime]) in 1:4, combinedData)
+    # Remove holiday hours from combinedData
+    # TODO: Add more holidays 
+    #combinedData = filter(row -> !(row[:HourUTC_datetime] in DateTime(2024, 12, 24):Day(1):DateTime(2025, 1, 1)), combinedData)
+
 
     #println("Missing data points for each client:")
     #println(missing_data_counts)

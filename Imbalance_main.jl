@@ -4,7 +4,7 @@ include("Scenario_creation.jl")
 include("imbalance_functions.jl")
 include("Game_theoretic_functions.jl")
 include("Plotting.jl")
-using Plots, Dates, Random, Combinatorics
+using Plots, Dates, Random, Combinatorics, StatsPlots
 
 
 Random.seed!(1) # Set seed for reproducibility
@@ -32,7 +32,7 @@ demand_scenarios = generate_scenarios(clients, systemData["price_prod_demand_df"
 systemData["demand_scenarios"] = demand_scenarios
 
 # Accepted forecast types: "perfect", "scenarios", "noise"
-systemData["demand_forecast"] = "stochastic"
+systemData["demand_forecast"] = "scenarios"
 systemData["pv_forecast"] = "scenarios"
 println("Imbalance calculation time, all coalitions :")
 imbalances, hourly_imbalances, bids  = @time period_imbalance(systemData, clients, start_hour, sim_days; threads = false)
@@ -83,3 +83,39 @@ plot_results(
     start_hour,
     sim_days
 )
+
+daily_cost_MWh_imbalance = allocation_variance(allocations, clients, coalitions, systemData, start_hour, sim_days)
+# Scaling the daily allocations to be Cost per MWh imbalance 
+
+plot_client = "N"
+allocation_labels = Dict(
+    "shapley" => ("Shapley", :red),
+    "VCG" => ("VCG", :yellow),
+    "VCG_budget_balanced" => ("VCG Budget Balanced", :orange),
+    "gately_full" => ("Gately Full", :grey),
+    "gately_daily" => ("Gately Daily", :black),
+    "gately_hourly" => ("Gately Hourly", :lightgrey),
+    "full_cost" => ("Full Cost", :pink),
+    "reduced_cost" => ("Reduced Cost", :lightblue),
+    "nucleolus" => ("Nucleolus", :green)
+)
+p_variance = plot(
+    title = "Daily Cost per Allocation for Client $plot_client",
+    xlabel = "Allocation",
+    ylabel = "Cost compared to no cooperation",
+    xticks = (1:length(allocations), [allocation_labels[a][1] for a in allocations]),
+    #legend = true,
+    legend=:outertopright,
+    xrotation = 45
+)
+# Cost per MWh imbalance
+cost_imbalance = Dict{String, Dict{String, Float64}}()
+
+for (i, alloc) in enumerate(allocations)
+    label, color = allocation_labels[alloc]
+    plotVals = [daily_cost_MWh_imbalance[plot_client, alloc, day] for day in 1:sim_days]
+    boxplot!(fill(i, sim_days), plotVals; color=color, markerstrokecolor=:black, label=label)
+end
+display(p_variance)
+
+

@@ -5,53 +5,120 @@ const GUROBI_ENV = Gurobi.Env()
 
 
 function calculate_allocations(
-    allocations, clients, coalitions, imbalances, hourly_imbalances, systemData
+    allocations, clients, coalitions, imbalances, hourly_imbalances, systemData; printing = true
     )
     # Calculates all the allocations specified in the allocations list
     # This could probably have been done better...
     allocation_costs = Dict{String, Any}()
     if "shapley" in allocations
-        println("Shapley calculation time:")
-        allocation_costs["shapley"] = @time shapley_value(clients, coalitions, imbalances)
+        # Calculating allocation, only prints time if printing is true
+        if printing
+            println("Shapley calculation time:")
+            allocation_costs["shapley"] = @time shapley_value(clients, coalitions, imbalances)
+        else
+            allocation_costs["shapley"] = shapley_value(clients, coalitions, imbalances)
+        end
     end
     if "VCG" in allocations
-        println("VCG calculation time:")
-        allocation_costs["VCG"] = @time VCG_tax(clients, imbalances, hourly_imbalances, systemData; budget_balance=false)
+        if printing
+            println("VCG calculation time:")
+            allocation_costs["VCG"] = @time VCG_tax(clients, imbalances, hourly_imbalances, systemData; budget_balance=false)
+        else
+            allocation_costs["VCG"] = VCG_tax(clients, imbalances, hourly_imbalances, systemData; budget_balance=false)
+        end
     end
     if "VCG_budget_balanced" in allocations
-        println("VCG budget balanced calculation time:")
-        allocation_costs["VCG_budget_balanced"] = @time VCG_tax(clients, imbalances, hourly_imbalances, systemData; budget_balance=true)
+        if printing
+            println("VCG budget balanced calculation time:")
+            allocation_costs["VCG_budget_balanced"] = @time VCG_tax(clients, imbalances, hourly_imbalances, systemData; budget_balance=true)
+        else
+            allocation_costs["VCG_budget_balanced"] = VCG_tax(clients, imbalances, hourly_imbalances, systemData; budget_balance=true)
+        end
     end
     if "gately_full" in allocations
-        println("Gately calculation time, full period:")
-        gately_full_values = @time gately_point(clients, imbalances)
+        if printing
+            println("Gately calculation time, full period:")
+            gately_full_values = @time gately_point(clients, imbalances)
+        else
+            gately_full_values = gately_point(clients, imbalances)
+        end
         allocation_costs["gately_full"] = deepcopy(gately_full_values)
     end
     if "gately_daily" in allocations
-        println("Gately calculation time, daily:")
-        gately_daily_values = @time gately_point_daily(clients, hourly_imbalances, systemData)
+        if printing
+            println("Gately calculation time, daily:")
+            gately_daily_values = @time gately_point_daily(clients, hourly_imbalances, systemData)
+        else
+            gately_daily_values = gately_point_daily(clients, hourly_imbalances, systemData)
+        end
         allocation_costs["gately_daily"] = deepcopy(gately_daily_values)
     end
     if "gately_hourly" in allocations
-        println("Gately calculation time, hourly:")
-        gately_hourly_values = @time gately_point_hourly(clients, hourly_imbalances, systemData)
+        if printing
+            println("Gately calculation time, hourly:")
+            gately_hourly_values = @time gately_point_hourly(clients, hourly_imbalances, systemData)
+        else
+            gately_hourly_values = gately_point_hourly(clients, hourly_imbalances, systemData)
+        end
         allocation_costs["gately_hourly"] = deepcopy(gately_hourly_values)
     end
     if "full_cost" in allocations
-        println("Full cost transfer calculation time:")
-        full_cost_transfer_values = @time full_cost_transfer(clients, hourly_imbalances, systemData)
+        if printing
+            println("Full cost transfer calculation time:")
+            full_cost_transfer_values = @time full_cost_transfer(clients, hourly_imbalances, systemData)
+        else
+            full_cost_transfer_values = full_cost_transfer(clients, hourly_imbalances, systemData)
+        end
         allocation_costs["full_cost"] = deepcopy(full_cost_transfer_values)
     end
     if "reduced_cost" in allocations
-        println("reduced cost calculation time:")
-        reduced_cost_values = @time reduced_cost(clients, hourly_imbalances, systemData)
+        if printing
+            println("reduced cost calculation time:")
+            reduced_cost_values = @time reduced_cost(clients, hourly_imbalances, systemData)
+        else
+            reduced_cost_values = reduced_cost(clients, hourly_imbalances, systemData)
+        end
         allocation_costs["reduced_cost"] = deepcopy(reduced_cost_values)
     end
     if "nucleolus" in allocations
-        println("Nucleolus calculation time:")
-        ___ , nucleolus_values = @time nucleolus(clients, imbalances)
+        if printing
+            println("Nucleolus calculation time:")
+            ___ , nucleolus_values = @time nucleolus(clients, imbalances)
+        else
+            ___ , nucleolus_values = nucleolus(clients, imbalances)
+        end
         allocation_costs["nucleolus"] = deepcopy(nucleolus_values)
     end
+    return allocation_costs
+end
+
+function allocation_variance(allocations, clients, coalitions, systemData, start_hour, sim_days)
+    # This function calculates the allocation for each client for each allocation method for each day
+    # Output is scaled to be cost per MWh imbalance
+    # Output: allocation_costs[client, allocation, day]
+    allocation_costs = Dict{Tuple{String, String, Int}, Float64}()
+
+    for day in 1:sim_days
+        curr_hour = start_hour + Dates.Hour((day - 1) * 24)
+        println("Calculating allocations for day ", day)
+        # Calculate the imbalances for the day
+        imbalances, hourly_imbalances_day, _ = period_imbalance(systemData, clients, curr_hour, 1; threads = false, printing = false)
+        # Calculate the allocations for the day
+        daily_allocations = calculate_allocations(
+            allocations, clients, coalitions, imbalances, hourly_imbalances_day, systemData; printing = false
+        )
+        # Store the results in the new structure
+        for allocation in allocations
+            alloc = daily_allocations[allocation]
+            # Scale allocations to be cost per MWh imbalance
+            daily_abs_imbalance = zeros(Float64, length(clients))
+            for (idx,client) in enumerate(clients)
+                daily_abs_imbalance[idx] = sum(abs.(hourly_imbalances_day[[client]]))
+                allocation_costs[(client, allocation, day)] = alloc[client]/ daily_abs_imbalance[idx]
+            end
+        end
+    end
+
     return allocation_costs
 end
 
@@ -210,69 +277,32 @@ function gately_point(clients, imbalance_costs)
         v[idx] = imbalance_costs[[i]]
     end
     total_imbalance = imbalance_costs[clients]
-
-    # Initialize the optimization model
-    model = Model(() -> Gurobi.Optimizer(GUROBI_ENV))
-    #set_optimizer_attribute(model, "OutputFlag", 0)
-    set_silent(model)
-    #set_optimizer_attribute(model, "DualReductions", 0)
-    #set_optimizer_attribute(model, "Presolve", 0)
-    total_imbalance = sum(values(imbalance_costs))
-    @variable(model, payment[1:A]) # Payments for each agent
-    @variable(model, d[1:A]) # propensity to disrupt for each agent
-    @variable(model, max_d) # Maximum propensity to disrupt
-
-    @objective(model, Min, max_d) # Objective function
-
-
-    @constraint(model, [a = 1:A],
-                (sum(payment[b] for b in 1:A if b != a) - v_without[a]) / (payment[a] - v[a]) == d[a])
-    
-    # Enforce collective rationality
-    @constraint(model, sum(payment) == total_imbalance)
-
-    # Enforce maximum propensity to disrupt
-    @constraint(model, [a = 1:A], d[a] <= max_d)
-
-    # Enforce individual rationality
-    @constraint(model, [a = 1:A], payment[a] <= v[a]) 
-
-    # Enforce that all propensities are equal (not strictly necessary, but helps covergence)
-    @constraint(model, [a = 1:A; a != A], d[a] == d[a + 1])
-
-    # Solve the model
-    optimize!(model)
-    if termination_status(model) != MOI.OPTIMAL
-        println("No optimal solution found for Gately point")
-        return nothing
-    end
-    
-    # Extract the solution
     gately_distribution = Dict{String, Float64}()
-    for (idx, client) in enumerate(clients)
-        gately_distribution[client] = value(payment[idx])
+
+    # Finding propensity to disrupt with the closed form solution
+    d = 0
+    try
+        d = ((A-1)*total_imbalance-sum(v_without))/(total_imbalance-sum(v))
+    catch e
+        println("Error in calculating propensity to disrupt: ", e)
+        println("Likely cause: all imbalances have the same sign, or no imbalance at all")
+        println("Returning solitary client imbalance costs")
+        gately_distribution = v
+        return gately_distribution
     end
 
-    return gately_distribution
 
-    # function f!(F, x)
-    #     for a in 1:A-1
-    #         F[a] = ((sum(x[b] for b in 1:A if b != a)-v_without[a])/(x[a]-v[a]) 
-    #         - (sum(x[b] for b in 1:A if b != (a+1))-v_without[a+1])/(x[a+1]-v[a+1]))
-    #     end
-    #     F[A] = sum(x) - total_imbalance
-    # end
+    # Calculating allocation using the found propensity to disrupt
+    for (idx,client) in enumerate(clients)
+        # d = ((total_imbalance-v_without(client)) - x)/(x-v[client])        
+        gately_distribution[client] = (d*v[idx] + total_imbalance - v_without[idx]) / (d + 1)
+    end
 
-    # sol = nlsolve(f!, zeros(Float64, A))
-    # x = sol.zero
-    # gately_distribution = Dict(zip(clients, x))
-    # # Print the value of this for all clients
-    # for a in 1:A
-    #     println("Client ", a, ": ", ((sum(x[b] for b in 1:A if b != a) - v_without[a]) / (x[a] - v[a])))
-    #     println("x[a]: ", x[a])
-    # end
     return gately_distribution
 end
+
+
+
 
 function gately_point_daily(clients, hourly_imbalances, systemData)
     upreg_price = systemData["upreg_price"]

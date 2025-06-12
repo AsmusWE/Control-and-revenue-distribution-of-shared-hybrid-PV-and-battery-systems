@@ -127,7 +127,7 @@ function calculate_bids(coalitions, systemData)
     return bids
 end
 
-function period_imbalance(systemData, clients, startDay, days; threads=true)
+function period_imbalance(systemData, clients, startDay, days; threads=true, printing=true)
     # This function calculates the imbalance for a given period
     # It returns the imbalance for the given period
     # The period is given in hours
@@ -139,7 +139,9 @@ function period_imbalance(systemData, clients, startDay, days; threads=true)
         thread_local_bids = Dict(tid => Dict() for tid in 1:Threads.nthreads())
 
         Threads.@threads for day in 1:days
-            println("Calculating imbalances for day ", day, " of ", days)
+            if printing
+                println("Calculating imbalances for day ", day, " of ", days)
+            end
             tid = Threads.threadid()
             dayData = deepcopy(systemData)
             day_start = start_hour + (day - 1) * 24
@@ -209,7 +211,9 @@ function period_imbalance(systemData, clients, startDay, days; threads=true)
         end
 
         for day in 1:days
-            println("Calculating imbalances for day ", day, " of ", days)
+            if printing
+                println("Calculating imbalances for day ", day, " of ", days)
+            end
             day_start = start_hour + (day - 1) * 24
             day_end = day_start + 23
             dayData = deepcopy(systemData)

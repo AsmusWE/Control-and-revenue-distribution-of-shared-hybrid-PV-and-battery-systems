@@ -96,30 +96,58 @@ function allocation_variance(allocations, clients, coalitions, systemData, start
     # This function calculates the allocation for each client for each allocation method for each day
     # Output is scaled to be cost per MWh imbalance
     # Output: allocation_costs[client, allocation, day]
-    allocation_costs = Dict{Tuple{String, String, Int}, Float64}()
+    allocation_costs_daily_scaled = Dict{Tuple{String, String, Int}, Float64}()
+    allocation_costs = Dict{String, Dict{String, Float64}}()
+    imbalances = Dict{Vector{String}, Float64}()
+    hourly_imbalances = Dict{String, Vector{Float64}}()
+
+    # Initialize dicts
+    for allocation in allocations
+        allocation_costs[allocation] = Dict{String, Float64}()
+        for client in clients
+            allocation_costs[allocation][client] = 0
+        end
+    end
+    for coalition in coalitions
+        imbalances[coalition] = 0.0
+    end
+    for client in clients
+        hourly_imbalances[client] = Vector{Float64}()
+    end
 
     for day in 1:sim_days
         curr_hour = start_hour + Dates.Hour((day - 1) * 24)
         println("Calculating allocations for day ", day)
         # Calculate the imbalances for the day
-        imbalances, hourly_imbalances_day, _ = period_imbalance(systemData, clients, curr_hour, 1; threads = false, printing = false)
+        imbalances_day, hourly_imbalances_day = period_imbalance(systemData, clients, curr_hour, 1; threads = false, printing = false)
         # Calculate the allocations for the day
         daily_allocations = calculate_allocations(
-            allocations, clients, coalitions, imbalances, hourly_imbalances_day, systemData; printing = false
+            allocations, clients, coalitions, imbalances_day, hourly_imbalances_day, systemData; printing = false
         )
-        # Store the results in the new structure
+        # Store the results
         for allocation in allocations
             alloc = daily_allocations[allocation]
+            for client in clients
+                allocation_costs[allocation][client] += alloc[client]
+            end
             # Scale allocations to be cost per MWh imbalance
-            daily_abs_imbalance = zeros(Float64, length(clients))
             for (idx,client) in enumerate(clients)
-                daily_abs_imbalance[idx] = sum(abs.(hourly_imbalances_day[[client]]))
-                allocation_costs[(client, allocation, day)] = alloc[client]/ daily_abs_imbalance[idx]
+                allocation_costs_daily_scaled[(client, allocation, day)] = alloc[client]/ imbalances_day[[client]]
             end
         end
+
+        # Store the imbalances for the da7
+        for (coalition, imbalance) in imbalances_day
+            imbalances[coalition] += imbalance
+        end
+
+        for client in clients
+            append!(hourly_imbalances[client],hourly_imbalances_day[[client]])
+        end
+
     end
 
-    return allocation_costs
+    return allocation_costs_daily_scaled, allocation_costs, imbalances, hourly_imbalances, bids
 end
 
 

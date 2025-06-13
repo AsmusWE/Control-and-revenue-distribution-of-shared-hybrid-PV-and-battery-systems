@@ -15,6 +15,7 @@ clients = filter(x -> x != "Z", clients)
 clients = filter(x -> x != "A", clients)
 clients = filter(x -> x != "G", clients)
 clients = filter(x -> !(x in ["W", "T", "P", "V", "J", "F","R","K"]), clients)
+clients = filter(x -> x != "I", clients)
 #clients = filter(x -> x in ["L", "Q"], clients)
 
 coalitions = collect(combinations(clients))
@@ -35,7 +36,7 @@ systemData["demand_scenarios"] = demand_scenarios
 systemData["demand_forecast"] = "scenarios"
 systemData["pv_forecast"] = "scenarios"
 println("Imbalance calculation time, all coalitions :")
-imbalances, hourly_imbalances, bids  = @time period_imbalance(systemData, clients, start_hour, sim_days; threads = false)
+#imbalances, hourly_imbalances, bids  = @time period_imbalance(systemData, clients, start_hour, sim_days; threads = false)
 
 allocations = [
     "shapley",
@@ -51,9 +52,10 @@ allocations = [
 
 # Calculating allocations
 println("Calculating allocations...")
-allocation_costs = calculate_allocations(
-    allocations, clients, coalitions, imbalances, hourly_imbalances, systemData
-)
+daily_cost_MWh_imbalance, allocation_costs, imbalances, hourly_imbalances = allocation_variance(allocations, clients, coalitions, systemData, start_hour, sim_days)
+#allocation_costs = calculate_allocations(
+#    allocations, clients, coalitions, imbalances, hourly_imbalances, systemData
+#)
 
 # Checking stability
 max_instability = Dict{String, Float64}()
@@ -77,15 +79,11 @@ plot_results(
     allocations,
     systemData,
     allocation_costs,
-    bids,
     imbalances,
     clients,
     start_hour,
     sim_days
 )
-
-daily_cost_MWh_imbalance = allocation_variance(allocations, clients, coalitions, systemData, start_hour, sim_days)
-# Scaling the daily allocations to be Cost per MWh imbalance 
 
 plot_client = "N"
 allocation_labels = Dict(
@@ -104,8 +102,8 @@ p_variance = plot(
     xlabel = "Allocation",
     ylabel = "Cost compared to no cooperation",
     xticks = (1:length(allocations), [allocation_labels[a][1] for a in allocations]),
-    #legend = true,
-    legend=:outertopright,
+    legend = false,
+    #legend=:outertopright,
     xrotation = 45
 )
 # Cost per MWh imbalance
@@ -115,6 +113,11 @@ for (i, alloc) in enumerate(allocations)
     label, color = allocation_labels[alloc]
     plotVals = [daily_cost_MWh_imbalance[plot_client, alloc, day] for day in 1:sim_days]
     boxplot!(fill(i, sim_days), plotVals; color=color, markerstrokecolor=:black, label=label)
+    mean_val_unweighted = sum(plotVals) / length(plotVals)
+    mean_val_weighted = allocation_costs[alloc][plot_client]/imbalances[[plot_client]]
+    #annotate!(i, mean_val_unweighted, text(string(round(mean_val_unweighted, digits=4)), :black, :center, 8))
+    # Add a red line for the weighted mean
+    plot!([i-0.4, i+0.4], [mean_val_weighted, mean_val_weighted], color=:blue, linewidth=2, label=false)
 end
 display(p_variance)
 

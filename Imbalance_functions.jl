@@ -227,5 +227,5 @@ function period_imbalance(systemData, clients, startDay, days; threads=true, pri
             end
         end
     end
-    return period_imbalances, period_hourly_imbalance, period_bids
+    return period_imbalances, period_hourly_imbalance
 end

@@ -3,7 +3,7 @@ function plot_results(
     allocations,
     systemData,
     allocation_costs,
-    bids,
+    #bids,
     imbalances,
     clients_without_missing_data,
     start_hour,
@@ -71,6 +71,10 @@ function plot_results(
             end
         end
     end
+    for alloc in allocations
+        println("Allocation: ", alloc)
+        println("Cost per MWh Imbalance: ", cost_imbalance[alloc])
+    end
     p_imbalance_cost = plot(title="Cost per MWh Imbalance for Clients", xlabel="Client", ylabel="Cost per MWh Imbalance", xticks=(1:length(plotKeys), plotKeys), xrotation=45)
     for alloc in allocations
         if haskey(cost_imbalance, alloc)
@@ -82,17 +86,17 @@ function plot_results(
     display(p_imbalance_cost)
 
     # Plot aggregate demand, PV production, bids, and imbalance
-    p_aggregate = plot(title="Aggregate Demand, PV Production, Bids, and Imbalance", xlabel="Hour", ylabel="Value")
-    aggregate_demand = sum(dayData["price_prod_demand_df"][!, client] for client in clients_without_missing_data)
-    aggregate_pvProd = sum(dayData["price_prod_demand_df"][!, "SolarMWh"] .* systemData["clientPVOwnership"][client] for client in clients_without_missing_data)
-    combined_bids = bids[clients_without_missing_data]
-    combined_imbalance = combined_bids + aggregate_pvProd - aggregate_demand
-    n_hours = length(aggregate_demand)
-    plot!(p_aggregate, 1:n_hours, aggregate_demand, label="Aggregate Demand")
-    plot!(p_aggregate, 1:n_hours, aggregate_pvProd, label="Aggregate PV Production")
-    plot!(p_aggregate, 1:n_hours, combined_bids, label="Combined Bids")
-    plot!(p_aggregate, 1:n_hours, combined_imbalance, label="Combined Imbalance")
-    display(p_aggregate)
+    #p_aggregate = plot(title="Aggregate Demand, PV Production, Bids, and Imbalance", xlabel="Hour", ylabel="Value")
+    #aggregate_demand = sum(dayData["price_prod_demand_df"][!, client] for client in clients_without_missing_data)
+    #aggregate_pvProd = sum(dayData["price_prod_demand_df"][!, "SolarMWh"] .* systemData["clientPVOwnership"][client] for client in clients_without_missing_data)
+    #combined_bids = bids[clients_without_missing_data]
+    #combined_imbalance = combined_bids + aggregate_pvProd - aggregate_demand
+    #n_hours = length(aggregate_demand)
+    #plot!(p_aggregate, 1:n_hours, aggregate_demand, label="Aggregate Demand")
+    #plot!(p_aggregate, 1:n_hours, aggregate_pvProd, label="Aggregate PV Production")
+    #plot!(p_aggregate, 1:n_hours, combined_bids, label="Combined Bids")
+    #plot!(p_aggregate, 1:n_hours, combined_imbalance, label="Combined Imbalance")
+    #display(p_aggregate)
 
     # Plot total MWh demand per client
     total_MWh_demand = Dict(client => sum(dayData["price_prod_demand_df"][!, Symbol(client)]) for client in plotKeys)

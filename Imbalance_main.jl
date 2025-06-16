@@ -36,7 +36,7 @@ systemData["demand_scenarios"] = demand_scenarios
 systemData["demand_forecast"] = "scenarios"
 systemData["pv_forecast"] = "scenarios"
 println("Imbalance calculation time, all coalitions :")
-#imbalances, hourly_imbalances, bids  = @time period_imbalance(systemData, clients, start_hour, sim_days; threads = false)
+#imbalance_costs, hourly_imbalances, bids  = @time period_imbalance(systemData, clients, start_hour, sim_days; threads = false)
 
 allocations = [
     "shapley",
@@ -47,78 +47,54 @@ allocations = [
     #"gately_hourly",
     "full_cost",
     "reduced_cost",
-    "nucleolus"
+    #"nucleolus"
 ]
 
 # Calculating allocations
 println("Calculating allocations...")
-daily_cost_MWh_imbalance, allocation_costs, imbalances, hourly_imbalances = allocation_variance(allocations, clients, coalitions, systemData, start_hour, sim_days)
+daily_cost_MWh_imbalance, allocation_costs, imbalance_costs, hourly_imbalances = allocation_variance(allocations, clients, coalitions, systemData, start_hour, sim_days)
 #allocation_costs = calculate_allocations(
-#    allocations, clients, coalitions, imbalances, hourly_imbalances, systemData
+#    allocations, clients, coalitions, imbalance_costs, hourly_imbalances, systemData
 #)
 
 # Checking stability
 max_instability = Dict{String, Float64}()
 for alloc in allocations
     println("Checking stability for allocation: ", alloc)
-    max_instability[alloc] = check_stability(allocation_costs[alloc], imbalances, clients)
+    max_instability[alloc] = check_stability(allocation_costs[alloc], imbalance_costs, clients)
 end
 println("Max instabilities: ", max_instability)
 
-# Compare the sum of individual client imbalances with the grand coalition imbalance
+# Compare the sum of individual client imbalance_costs with the grand coalition imbalance
 grand_coalition = clients
-grand_coalition_imbalance = imbalances[grand_coalition]
+grand_coalition_imbalance = imbalance_costs[grand_coalition]
 
-individual_imbalance_sum = sum(imbalances[[client]] for client in clients)
+individual_imbalance_sum = sum(imbalance_costs[[client]] for client in clients)
 
 println("Grand coalition imbalance: ", grand_coalition_imbalance)
-println("Sum of individual client imbalances: ", individual_imbalance_sum)
+println("Sum of individual client imbalance_costs: ", individual_imbalance_sum)
 println("Difference: ", grand_coalition_imbalance - individual_imbalance_sum)
 
 plot_results(
     allocations,
     systemData,
     allocation_costs,
-    imbalances,
+    imbalance_costs,
     clients,
     start_hour,
+    sim_days, 
+)
+plot_client = "N"
+
+plot_variance(
+    allocations,
+    allocation_costs,
+    daily_cost_MWh_imbalance,
+    imbalance_costs,
+    plot_client,
     sim_days
 )
 
-plot_client = "N"
-allocation_labels = Dict(
-    "shapley" => ("Shapley", :red),
-    "VCG" => ("VCG", :yellow),
-    "VCG_budget_balanced" => ("VCG Budget Balanced", :orange),
-    "gately_full" => ("Gately Full", :grey),
-    "gately_daily" => ("Gately Daily", :black),
-    "gately_hourly" => ("Gately Hourly", :lightgrey),
-    "full_cost" => ("Full Cost", :pink),
-    "reduced_cost" => ("Reduced Cost", :lightblue),
-    "nucleolus" => ("Nucleolus", :green)
-)
-p_variance = plot(
-    title = "Daily Cost per Allocation for Client $plot_client",
-    xlabel = "Allocation",
-    ylabel = "Cost compared to no cooperation",
-    xticks = (1:length(allocations), [allocation_labels[a][1] for a in allocations]),
-    legend = false,
-    #legend=:outertopright,
-    xrotation = 45
-)
-# Cost per MWh imbalance
-cost_imbalance = Dict{String, Dict{String, Float64}}()
 
-for (i, alloc) in enumerate(allocations)
-    label, color = allocation_labels[alloc]
-    plotVals = [daily_cost_MWh_imbalance[plot_client, alloc, day] for day in 1:sim_days]
-    boxplot!(fill(i, sim_days), plotVals; color=color, markerstrokecolor=:black, label=label)
-    mean_val_unweighted = sum(plotVals) / length(plotVals)
-    mean_val_weighted = allocation_costs[alloc][plot_client]/imbalances[[plot_client]]
-    #annotate!(i, mean_val_unweighted, text(string(round(mean_val_unweighted, digits=4)), :black, :center, 8))
-    # Add a red line for the weighted mean
-    plot!([i-0.4, i+0.4], [mean_val_weighted, mean_val_weighted], color=:blue, linewidth=2, label=false)
-end
-display(p_variance)
 
 

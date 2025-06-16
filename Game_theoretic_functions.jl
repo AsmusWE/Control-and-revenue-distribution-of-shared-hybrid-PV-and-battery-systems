@@ -131,7 +131,7 @@ function allocation_variance(allocations, clients, coalitions, systemData, start
                 allocation_costs[allocation][client] += alloc[client]
             end
             # Scale allocations to be cost per MWh imbalance
-            for (idx,client) in enumerate(clients)
+            for client in clients
                 allocation_costs_daily_scaled[(client, allocation, day)] = alloc[client]/ imbalances_day[[client]]
             end
         end
@@ -147,7 +147,7 @@ function allocation_variance(allocations, clients, coalitions, systemData, start
 
     end
 
-    return allocation_costs_daily_scaled, allocation_costs, imbalances, hourly_imbalances, bids
+    return allocation_costs_daily_scaled, allocation_costs, imbalances, hourly_imbalances
 end
 
 

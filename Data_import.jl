@@ -30,59 +30,13 @@ function load_data(;batCap = 100.0, initSoC = 0.0)
     pvProduction[!, :SolarMWh] = pvProduction[!, :SolarMWh_unscaled].*plant_size / old_plant_size
     pvProduction = select(pvProduction, [:HourUTC_datetime, :SolarMWh])
 
-    priceData = CSV.read("Data/Elspotprices.csv", DataFrame; decimal=',')
-    priceData[!, :HourUTC_datetime] = DateTime.(priceData[:, :HourUTC], DateFormat("yyyy-mm-dd HH:MM:SS"))
-    priceData = select(priceData, [:HourUTC_datetime, :SpotPriceDKK])
+    # Load imbalance prices
+    # NOTE: The prices are in EUR/MWh, and the data is in UTC
+    imbalanceData = CSV.read("Data/imbalancePrice.csv", DataFrame; decimal=',')
+    imbalanceData[!, :HourUTC_datetime] = DateTime.(imbalanceData[:, :HourUTC], DateFormat("yyyy-mm-dd HH:MM:SS"))
+    imbalanceData = select(imbalanceData, [:HourUTC_datetime, :ImbalancePriceEUR, :SpotPriceEUR])
 
-    # Combine the two dataframes based on the HourUTC column
-    combinedData = innerjoin(pvProduction, priceData, demand , on=:HourUTC_datetime)
-
-
-
-    # Adding tariffs
-    # Elafgift is 4 oere/kWh = 40 DKK/MWh for companies
-    elafgift = 40 # DKK/MWh
-    # Source: https://energinet.dk/el/elmarkedet/tariffer/aktuelle-tariffer/
-    # Energinet 135 DKK/MWh import, 11.5 DKK/MWh export
-    importTariffEnerginet = 135 # DKK/MWh
-    exportTariffEnerginet = 11.5 # DKK/MWh
-    # N1 
-    exportTariffN1 = 11 # DKK/MWh
-    importTariffN1Low = 55.6 # DKK/MWh
-    importTariffN1High = 166.8 # DKK/MWh
-    importTariffN1Peak = 333.7 # DKK/MWh
-    # Initialize priceImp with the base import tariff from Energinet
-    priceImp = combinedData[:, :SpotPriceDKK] .+ importTariffEnerginet .+ elafgift
-    # Initialize tariffSum to store the sum of all tariffs for each hour
-    tariffSum = fill(0.0, size(combinedData, 1))
-    # Apply time-based tariffs
-    for i in 1:size(combinedData, 1)
-        timestamp = combinedData[i, :HourUTC_datetime]
-        weekday = dayofweek(timestamp)
-        hour = Dates.hour(timestamp)
-        month = Dates.month(timestamp)
-
-        if hour >= 0 && hour < 6
-            priceImp[i] += importTariffN1Low
-            tariffSum[i] += importTariffN1Low
-        elseif (month in 4:9) && (weekday in [6, 7]) && (hour >= 6 && hour < 24)
-            priceImp[i] += importTariffN1Low
-            tariffSum[i] += importTariffN1Low
-        elseif (month in 10:12 || month in 1:3) && (weekday in 1:5) && (hour >= 6 && hour < 21)
-            priceImp[i] += importTariffN1Peak
-            tariffSum[i] += importTariffN1Peak
-        else
-            priceImp[i] += importTariffN1High
-            tariffSum[i] += importTariffN1High
-        end
-        tariffSum[i] += importTariffEnerginet + elafgift + exportTariffEnerginet + exportTariffN1
-    end
-    priceExp = combinedData[:, :SpotPriceDKK] .- exportTariffEnerginet .- exportTariffN1
-
-    # Adding to combinedData
-    combinedData[!, :PriceImp] = priceImp
-    combinedData[!, :PriceExp] = priceExp
-    combinedData[!, :TariffSum] = tariffSum
+    combinedData = innerjoin(pvProduction, imbalanceData, on=:HourUTC_datetime)
 
     clients = keys(clientPVOwnership)
     clients = sort(collect(clients))

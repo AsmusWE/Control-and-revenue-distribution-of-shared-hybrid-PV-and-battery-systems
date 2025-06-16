@@ -21,32 +21,38 @@ clients = filter(x -> x != "I", clients)
 coalitions = collect(combinations(clients))
 
 # We assume that upregulation is more expensive than downregulation
-systemData["upreg_price"] = 1
-systemData["downreg_price"] = 1
+#systemData["upreg_price"] = 1
+#systemData["downreg_price"] = 1
 
 # First hour 2024-04-16T22:00:00
-# Last hour 2025-04-25T23:00:00
-start_hour = DateTime(2024, 8, 12, 0, 0, 0)
-sim_days = 36
-
-demand_scenarios = generate_scenarios(clients, systemData["price_prod_demand_df"], start_hour; num_scenarios=100)
+# Last hour 2025-03-04T11:00:00
+# Note that there must be enough data before the start hour to create scenarios
+data_start_hour = DateTime(2024, 4, 16, 22, 0, 0) # First hour of data availability
+start_hour = DateTime(2025, 2, 03, 0, 0, 0)
+sim_days = 29
+# Currently, demand and price must have the same amount of scenarios
+num_scenarios = 40
+demand_scenarios = generate_demand_scenarios(clients, systemData["price_prod_demand_df"], start_hour, data_start_hour; num_scenarios=num_scenarios)
+price_scenarios = generate_price_scenarios(systemData["price_prod_demand_df"], start_hour, data_start_hour; num_scenarios= num_scenarios)
 systemData["demand_scenarios"] = demand_scenarios
+systemData["price_scenarios"] = price_scenarios
 
 # Accepted forecast types: "perfect", "scenarios", "noise"
 systemData["demand_forecast"] = "scenarios"
-systemData["pv_forecast"] = "scenarios"
+systemData["pv_forecast"] = "noise"
+systemData["price_forecast"] = "scenarios"
 println("Imbalance calculation time, all coalitions :")
 #imbalance_costs, hourly_imbalances, bids  = @time period_imbalance(systemData, clients, start_hour, sim_days; threads = false)
 
 allocations = [
     "shapley",
-    "VCG",
-    "VCG_budget_balanced",
+    #"VCG",
+    #"VCG_budget_balanced",
     "gately_full",
     #"gately_daily",
     #"gately_hourly",
-    "full_cost",
-    "reduced_cost",
+    #"full_cost",
+    #"reduced_cost",
     #"nucleolus"
 ]
 
@@ -60,7 +66,7 @@ daily_cost_MWh_imbalance, allocation_costs, imbalance_costs, hourly_imbalances =
 # Checking stability
 max_instability = Dict{String, Float64}()
 for alloc in allocations
-    println("Checking stability for allocation: ", alloc)
+    #println("Checking stability for allocation: ", alloc)
     max_instability[alloc] = check_stability(allocation_costs[alloc], imbalance_costs, clients)
 end
 println("Max instabilities: ", max_instability)

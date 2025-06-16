@@ -2,7 +2,7 @@ using CSV
 using DataFrames
 using TimeZones
 
-function load_data(;batCap = 100.0, initSoC = 0.0)
+function load_data()
     
     demand = CSV.read("Data/consumption_data.csv", DataFrame)
     #testTimeCET = ZonedDateTime(String(demand[!,"datetime_cet"][1]), "yyyy-mm-dd HH:MM:SSz")
@@ -30,14 +30,21 @@ function load_data(;batCap = 100.0, initSoC = 0.0)
     pvProduction[!, :SolarMWh] = pvProduction[!, :SolarMWh_unscaled].*plant_size / old_plant_size
     pvProduction = select(pvProduction, [:HourUTC_datetime, :SolarMWh])
 
+    combinedData = innerjoin(pvProduction, demand, on=:HourUTC_datetime)
+
     # Load imbalance prices
     # NOTE: The prices are in EUR/MWh, and the data is in UTC
-    imbalanceData = CSV.read("Data/imbalancePrice.csv", DataFrame; decimal=',')
+    imbalanceData = CSV.read("Data/RegulatingBalancePowerdata.csv", DataFrame; decimal=',')
     imbalanceData[!, :HourUTC_datetime] = DateTime.(imbalanceData[:, :HourUTC], DateFormat("yyyy-mm-dd HH:MM:SS"))
-    imbalanceData = select(imbalanceData, [:HourUTC_datetime, :ImbalancePriceEUR, :SpotPriceEUR])
+    imbalanceData = select(imbalanceData, [:HourUTC_datetime, :ImbalancePriceEUR])
 
-    combinedData = innerjoin(pvProduction, imbalanceData, on=:HourUTC_datetime)
+    combinedData = innerjoin(combinedData, imbalanceData, on=:HourUTC_datetime)
+    
+    priceData = CSV.read("Data/Elspotprices.csv", DataFrame; decimal=',')
+    priceData[!, :HourUTC_datetime] = DateTime.(priceData[:, :HourUTC], DateFormat("yyyy-mm-dd HH:MM:SS"))
+    priceData = select(priceData, [:HourUTC_datetime, :SpotPriceEUR])
 
+    combinedData = innerjoin(combinedData, priceData, on=:HourUTC_datetime)
     clients = keys(clientPVOwnership)
     clients = sort(collect(clients))
 
@@ -77,12 +84,13 @@ function load_data(;batCap = 100.0, initSoC = 0.0)
     #println("Missing data points for each client:")
     #println(missing_data_counts)
 
+    # Sorting the combinedData by HourUTC_datetime
+    sort!(combinedData, :HourUTC_datetime)
+
     systemData = Dict(
         "demand" => demand,
         "clientPVOwnership" => clientPVOwnership,
         "clientBatteryOwnership" => clientBatteryOwnership,
-        "initSoC" => initSoC,
-        "batCap" => batCap,
         "clients" => clients,
         "price_prod_demand_df" => combinedData
     )

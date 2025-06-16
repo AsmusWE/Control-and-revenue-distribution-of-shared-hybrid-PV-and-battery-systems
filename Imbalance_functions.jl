@@ -134,10 +134,9 @@ function calculate_imbalance(systemData, clients)
     for coalition in coalitions
         #print("Coalition imbalance: ", coalition, " = ", sum(imbalance[coalition]), "\n")
         imbalance_cost[coalition] = 0.0 # Initialize the imbalance cost for the coalition
-        imbalance_cost[coalition] =  imbalance[coalition][1]
-        #for t in 1:length(imbalance[coalition])
-        #    imbalance_cost[coalition] += imbalance_penalty[t] * imbalance[coalition][t] # Calculate the cost of imbalance for each hour
-        #end
+        for t in 1:length(imbalance[coalition])
+            imbalance_cost[coalition] += imbalance_penalty[t] * imbalance[coalition][t] # Calculate the cost of imbalance for each hour
+        end
     end
     # Imbalance is by hour, with sign and without cost include
     #println("Imbalance for coalitions: ", imbalance)

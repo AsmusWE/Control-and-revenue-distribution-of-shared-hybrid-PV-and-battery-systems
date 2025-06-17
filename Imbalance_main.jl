@@ -86,39 +86,12 @@ plot_results(
 )
 
 plot_client = "N"
-allocation_labels = Dict(
-    "shapley" => ("Shapley", :red),
-    "VCG" => ("VCG", :yellow),
-    "VCG_budget_balanced" => ("VCG Budget Balanced", :orange),
-    "gately_full" => ("Gately Full", :grey),
-    "gately_daily" => ("Gately Daily", :black),
-    "gately_hourly" => ("Gately Hourly", :lightgrey),
-    "full_cost" => ("Full Cost", :pink),
-    "reduced_cost" => ("Reduced Cost", :lightblue),
-    "nucleolus" => ("Nucleolus", :green)
+
+plot_variance(
+    allocations,
+    allocation_costs,
+    daily_cost_MWh_imbalance,
+    imbalances,
+    plot_client,
+    sim_days
 )
-p_variance = plot(
-    title = "Daily Cost per Allocation for Client $plot_client",
-    xlabel = "Allocation",
-    ylabel = "Cost compared to no cooperation",
-    xticks = (1:length(allocations), [allocation_labels[a][1] for a in allocations]),
-    legend = false,
-    #legend=:outertopright,
-    xrotation = 45
-)
-# Cost per MWh imbalance
-cost_imbalance = Dict{String, Dict{String, Float64}}()
-
-for (i, alloc) in enumerate(allocations)
-    label, color = allocation_labels[alloc]
-    plotVals = [daily_cost_MWh_imbalance[plot_client, alloc, day] for day in 1:sim_days]
-    boxplot!(fill(i, sim_days), plotVals; color=color, markerstrokecolor=:black, label=label)
-    mean_val_unweighted = sum(plotVals) / length(plotVals)
-    mean_val_weighted = allocation_costs[alloc][plot_client]/imbalances[[plot_client]]
-    #annotate!(i, mean_val_unweighted, text(string(round(mean_val_unweighted, digits=4)), :black, :center, 8))
-    # Add a red line for the weighted mean
-    plot!([i-0.4, i+0.4], [mean_val_weighted, mean_val_weighted], color=:blue, linewidth=2, label=false)
-end
-display(p_variance)
-
-

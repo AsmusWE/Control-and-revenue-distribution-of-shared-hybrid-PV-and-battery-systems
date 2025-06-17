@@ -147,7 +147,7 @@ function allocation_variance(allocations, clients, coalitions, systemData, start
 
     end
 
-    return allocation_costs_daily_scaled, allocation_costs, imbalances, hourly_imbalances, bids
+    return allocation_costs_daily_scaled, allocation_costs, imbalances, hourly_imbalances
 end
 
 

@@ -71,10 +71,6 @@ function plot_results(
             end
         end
     end
-    for alloc in allocations
-        println("Allocation: ", alloc)
-        println("Cost per MWh Imbalance: ", cost_imbalance[alloc])
-    end
     p_imbalance_cost = plot(title="Imbalance compared to no cooperation", xlabel="Client", ylabel="Imbalance factor as part of grand coalition", xticks=(1:length(plotKeys), plotKeys), xrotation=45)
     for alloc in allocations
         if haskey(cost_imbalance, alloc)
@@ -144,6 +140,7 @@ p_variance = plot(
     title = "Imbalance compared to no cooperation, client $plot_client",
     xlabel = "Allocation",
     ylabel = "Imbalance compared to no cooperation",
+
     xticks = (1:length(allocations), [allocation_labels[a][1] for a in allocations]),
     legend = false,
     #legend=:outertopright,

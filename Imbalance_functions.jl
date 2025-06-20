@@ -45,35 +45,9 @@ function optimize_imbalance(coalition, systemData)
     else
         error("Unknown PV forecast type: $(systemData["pv_forecast"])")
     end
-
-
-    if systemData["price_forecast"] == "perfect"
-        # Price forecast is perfect, use actual price data
-        imbalance_price = systemData["price_prod_demand_df"][1:T, :ImbalancePriceEUR]
-        spot_price = systemData["price_prod_demand_df"][1:T, :SpotPriceEUR]
-        imb_penalty = imbalance_price .- spot_price
-    elseif systemData["price_forecast"] == "scenarios"
-        # Price forecast is not perfect, use scenarios
-        imbalance_price = systemData["price_scenarios"][weekday]["ImbalancePriceEUR"]
-        spot_price = systemData["price_scenarios"][weekday]["SpotPriceEUR"]
-        imb_penalty = imbalance_price .- spot_price # Imbalance penalty is the difference between imbalance price and spot price
-    elseif systemData["price_forecast"] == "noise"
-        # Forecast is set as the actual price with added noise
-        imbalance_price = systemData["price_prod_demand_df"][1:T, :ImbalancePriceEUR] .* (1 .+ 0.1 * randn(T, 1))
-        spot_price = systemData["price_prod_demand_df"][1:T, :SpotPriceEUR] .* (1 .+ 0.1 * randn(T, 1))
-        imb_penalty = imbalance_price .- spot_price # Imbalance penalty is the difference between imbalance price and spot price
-    else
-        error("Unknown price forecast type: $(systemData["price_forecast"])")
-    end
-
     prod = pvProduction.*sum(clientPVOwnership)
-    #upreg_price = systemData["upreg_price"]
-    #downreg_price = systemData["downreg_price"]
-
-    # Ensuring that the penalty is non-negative for both directions
-    upreg_penalty = max.(imb_penalty, 0)
-    downreg_penalty = -min.(imb_penalty, 0)
-
+    upreg_price = systemData["upreg_price"]
+    downreg_price = systemData["downreg_price"]
 
     #************************************************************************
 
@@ -88,12 +62,10 @@ function optimize_imbalance(coalition, systemData)
     @variable(model, neg_imbal[1:T, 1:S] >= 0) # Negative imbalance
     @variable(model, bid[1:T]) # Bid amount
 
-    @objective(model, Min, prob * sum((upreg_penalty[t,s]*neg_imbal[t,s]+downreg_penalty[t,s]*pos_imbal[t,s]) for t in 1:T for s in 1:S)) # Objective function
+    @objective(model, Min, prob * sum((downreg_price*pos_imbal[t, s] + upreg_price*neg_imbal[t, s]) for t in 1:T for s in 1:S)) # Objective function
 
-    # Defining imbalance
     @constraint(model, [t = 1:T, s = 1:S],
                 imbal[t, s] == demand[t, s] - prod[t] - bid[t])
-    # Defining positive and negative imbalance
     @constraint(model, [t = 1:T, s = 1:S], pos_imbal[t, s] - neg_imbal[t, s] == imbal[t, s])
     solution = optimize!(model)
     if termination_status(model) == MOI.OPTIMAL
@@ -126,22 +98,15 @@ function calculate_imbalance(systemData, clients)
     
     # Calculate the total imbalance for each coalition
     imbalance_cost = Dict()
-    #upreg_price = systemData["upreg_price"]
-    #downreg_price = systemData["downreg_price"]
-    imbalance_price = systemData["price_prod_demand_df"][!, :ImbalancePriceEUR]
-    spot_price = systemData["price_prod_demand_df"][!, :SpotPriceEUR]
-    imbalance_penalty = imbalance_price .- spot_price # Imbalance penalty is the difference between imbalance price and spot price
+    upreg_price = systemData["upreg_price"]
+    downreg_price = systemData["downreg_price"]
     for coalition in coalitions
         #print("Coalition imbalance: ", coalition, " = ", sum(imbalance[coalition]), "\n")
-        imbalance_cost[coalition] = 0.0 # Initialize the imbalance cost for the coalition
-        for t in 1:length(imbalance[coalition])
-            imbalance_cost[coalition] += imbalance_penalty[t] * imbalance[coalition][t] # Calculate the cost of imbalance for each hour
-        end
+        positive_imbalance = sum(imbalance[coalition][imbalance[coalition] .> 0])
+        negative_imbalance = sum(imbalance[coalition][imbalance[coalition] .< 0])
+        imbalance_cost[coalition] = positive_imbalance * downreg_price + abs(negative_imbalance) * upreg_price
     end
     # Imbalance is by hour, with sign and without cost include
-    #println("Imbalance for coalitions: ", imbalance)
-    #println("Bids for coalitions: ", bids)
-    println("Imbalance cost for coalitions: ", imbalance_cost)
     return imbalance_cost, bids, imbalance
 end
 
@@ -162,7 +127,7 @@ function calculate_bids(coalitions, systemData)
     return bids
 end
 
-function period_imbalance(systemData, clients, startDay, days; threads=false, printing=true)
+function period_imbalance(systemData, clients, startDay, days; threads=true, printing=true)
     # This function calculates the imbalance for a given period
     # It returns the imbalance for the given period
     # The period is given in hours

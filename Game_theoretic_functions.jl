@@ -131,7 +131,7 @@ function allocation_variance(allocations, clients, coalitions, systemData, start
                 allocation_costs[allocation][client] += alloc[client]
             end
             # Scale allocations to be cost per MWh imbalance
-            for client in clients
+            for (idx,client) in enumerate(clients)
                 allocation_costs_daily_scaled[(client, allocation, day)] = alloc[client]/ imbalances_day[[client]]
             end
         end
@@ -210,21 +210,21 @@ function VCG_tax(clients, imbalance_costs, hourly_imbalances, systemData;budget_
     VCG_taxes = Dict()
     grand_coalition = vec(clients)
 
-    imbalance_price = systemData["price_prod_demand_df"][!, :ImbalancePriceEUR]
-    spot_price = systemData["price_prod_demand_df"][!, :SpotPriceEUR]
-    imbalance_penalty = imbalance_price .- spot_price
-
     # Payments is a dictionary, keys are coalitions, values are member_payments
     # member_payments is a dictionary, keys are clients, values are arrays of payments for each hour
-    payments = calculate_payments(clients, hourly_imbalances, imbalance_penalty)
+    payments = calculate_payments(clients, hourly_imbalances, systemData["upreg_price"], systemData["downreg_price"])
     if budget_balance
         for t in 1:T
             temp_taxes = Dict()
             for (idx, i) in enumerate(clients)
                 coalition_without_i = filter(x -> x != clients[idx], grand_coalition)
                 gc_val_minus_i = sum(payments[client][t] for client in grand_coalition if client != i)
-                coalition_imbalance_without_i = sum(hourly_imbalances[coalition_without_i][t])
-                coalition_value_without_i = coalition_imbalance_without_i * imbalance_penalty[t]
+                coalition_value_without_i = sum(hourly_imbalances[coalition_without_i][t])
+                if coalition_value_without_i < 0
+                    coalition_value_without_i = abs(coalition_value_without_i)*systemData["upreg_price"]
+                else
+                    coalition_value_without_i = coalition_value_without_i*systemData["downreg_price"]
+                end
                 temp_taxes[i] = -(coalition_value_without_i - gc_val_minus_i)
             end
             if sum(values(temp_taxes)) < -0.0001 # Adding a small tolerance to avoid floating point errors
@@ -266,11 +266,10 @@ function VCG_tax(clients, imbalance_costs, hourly_imbalances, systemData;budget_
     return VCG_utilities
 end
 
-function calculate_payments(clients, hourly_imbalances, imbalance_penalty)
-    # This function calculates the payments for each client in the given coalition
-    # The basic payment rule is that the net imbalance side shares the cost of the imbalance
+function calculate_payments(clients, hourly_imbalances, upreg_price, downreg_price)
     T = length(hourly_imbalances[[clients[1]]])
 
+    # Only calculate payments for the grand coalition
     coalition = clients
     member_payments = Dict()
     for m in coalition
@@ -279,12 +278,12 @@ function calculate_payments(clients, hourly_imbalances, imbalance_penalty)
             total_pos = sum(max(hourly_imbalances[[i]][t], 0) for i in coalition)
             total_neg = sum(-min(hourly_imbalances[[i]][t], 0) for i in coalition)
             member_imb = hourly_imbalances[[m]][t]
-            hour_imbalance = abs(sum(hourly_imbalances[[i]][t] for i in coalition))
+            hour_cost = abs(sum(hourly_imbalances[[i]][t] for i in coalition))
             if member_imb > 0 && total_pos > total_neg
-                hour_cost = hour_imbalance * imbalance_penalty[t]
+                hour_cost = hour_cost * downreg_price
                 member_payments[m][t] = hour_cost * (member_imb / total_pos)
             elseif member_imb < 0 && total_neg > total_pos
-                hour_cost = hour_imbalance * imbalance_penalty[t]
+                hour_cost = hour_cost * upreg_price
                 member_payments[m][t] = hour_cost * (abs(member_imb) / total_neg)
             else
                 member_payments[m][t] = 0
@@ -390,11 +389,8 @@ end
 
 function full_cost_transfer(clients, hourly_imbalances, systemData)
     # Initializing
-    #upreg_price = systemData["upreg_price"]
-    #downreg_price = systemData["downreg_price"]
-    imbalance_price = systemData["price_prod_demand_df"][!, :ImbalancePriceEUR]
-    spot_price = systemData["price_prod_demand_df"][!, :SpotPriceEUR]
-    imbalance_penalty = imbalance_price .- spot_price
+    upreg_price = systemData["upreg_price"]
+    downreg_price = systemData["downreg_price"]
     client_cost = Dict{String, Float64}()
     imbalance_price = 0
     for client in clients
@@ -406,23 +402,23 @@ function full_cost_transfer(clients, hourly_imbalances, systemData)
         #positive_imbalance = sum(max(hourly_imbalances[[client]][t], 0) for client in clients)
         #negative_imbalance = sum(-min(hourly_imbalances[[client]][t], 0) for client in clients)
         # # Calculate how much each helping client should get per imbalance
-        #if net_imbalance > 0
-            #imbalance_price = downreg_price
+        if net_imbalance > 0
+            imbalance_price = downreg_price
             #net_imbalance_cost = net_imbalance * downreg_price
-        #else
-            #imbalance_price = upreg_price
+        else
+            imbalance_price = upreg_price
             #net_imbalance_cost = abs(net_imbalance) * upreg_price
-        #end
+        end
         # Check each client if they are helping or not, and calculate their cost
         for client in clients
             if hourly_imbalances[[client]][t]* net_imbalance > 0
                 # Client has an imbalance in the same direction as the net imbalance
                 # Client pays their full cost
-                client_cost[client] += (hourly_imbalances[[client]][t]) * imbalance_penalty[t] 
+                client_cost[client] += abs(hourly_imbalances[[client]][t]) * imbalance_price 
             else 
                 # Client counteracts the net imbalance
                 # Client pays nothing and gets compensated for reducing the imbalance
-                client_cost[client] += -((hourly_imbalances[[client]][t]) * imbalance_penalty[t])
+                client_cost[client] += -(abs(hourly_imbalances[[client]][t]) * imbalance_price)
             end
         end
     end
@@ -431,13 +427,8 @@ function full_cost_transfer(clients, hourly_imbalances, systemData)
 end
 
 function reduced_cost(clients, hourly_imbalances, systemData)
-    println("REDUCED COST NOT ADAPTED TO ONE PRICE SCHEME YET")
-    return nothing
-    #upreg_price = systemData["upreg_price"]
-    #downreg_price = systemData["downreg_price"]
-    imbalance_price = systemData["price_prod_demand_df"][!, :ImbalancePriceEUR]
-    spot_price = systemData["price_prod_demand_df"][!, :SpotPriceEUR]
-    imbalance_penalty = imbalance_price .- spot_price
+    upreg_price = systemData["upreg_price"]
+    downreg_price = systemData["downreg_price"]
     client_cost = Dict{String, Float64}()
     for client in clients
         client_cost[client] = 0.0
@@ -447,14 +438,13 @@ function reduced_cost(clients, hourly_imbalances, systemData)
         positive_imbalance = sum(max(hourly_imbalances[[client]][t], 0) for client in clients)
         negative_imbalance = sum(-min(hourly_imbalances[[client]][t], 0) for client in clients)
         if net_imbalance > 0
-            #imbalance_price = downreg_price
+            imbalance_price = downreg_price
             #net_imbalance_cost = net_imbalance * downreg_price
-            cost_per_imbalance = (net_imbalance/positive_imbalance) * imbalance_penalty[t]
+            cost_per_imbalance = (net_imbalance/positive_imbalance) * imbalance_price
         else
-            #imbalance_price = upreg_price
+            imbalance_price = upreg_price
             #net_imbalance_cost = abs(net_imbalance) * upreg_price
-            #TODO: Continue adapting to one price scheme
-            cost_per_imbalance = (abs(net_imbalance)/negative_imbalance) * imbalance_penalty[t]
+            cost_per_imbalance = (abs(net_imbalance)/negative_imbalance) * imbalance_price
         end
         for client in clients
             client_imb = hourly_imbalances[[client]][t]

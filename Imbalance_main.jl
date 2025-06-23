@@ -23,8 +23,8 @@ systemData, clients = load_data()
 clients = filter(x -> x != "Z", clients)
 clients = filter(x -> x != "A", clients)
 clients = filter(x -> x != "G", clients)
-#clients = filter(x -> !(x in ["W", "T", "P", "V", "J", "F","R","K"]), clients)
-#clients = filter(x -> x != "I", clients)
+clients = filter(x -> !(x in ["W", "T", "P", "V", "J", "F","R","K"]), clients)
+clients = filter(x -> x != "I", clients)
 #clients = filter(x -> x in ["L", "Q"], clients)
 
 coalitions = collect(combinations(clients))
@@ -52,9 +52,9 @@ allocations = [
     #"gately_full",
     #"gately_daily",
     #"gately_hourly",
-    "full_cost",
+    #"full_cost",
     #"reduced_cost",
-    #"nucleolus"
+    "nucleolus"
 ]
 
 # =========================

@@ -347,7 +347,7 @@ function nucleolus(clients, imbalances)
             max_excess, new_locked_excesses, payments = nucleolus_optimize(clients, imbalances, locked_excesses)
         catch e
             if length(locked_excesses) == length(coalitions) - 1
-                println("All coalitions are locked, the nucleolus has been found")
+                #println("All coalitions are locked, the nucleolus has been found")
                 return locked_excesses, payments
             else
                 println("An error occurred: ", e)
@@ -388,20 +388,49 @@ function nucleolus_optimize(clients, imbalances, locked_excesses)
     # Excess is how much more the coalitions pays as part of the grand coalition compared to the coalition value
     # The excess of each coalition must be less than or equal to the maximum excess
     @constraint(model, excess_cons[c = 1:C; c != gc_idx && !(c in locked_indices)],
-                sum(payment[i] for i in coalition_indices[c]) - imbalances[coalitions[c]] <= max_excess)
-    @constraint(model, locked_cons[c in locked_indices],
+                sum(payment[i] for i in coalition_indices[c]) - imbalances[coalitions[c]] <=  max_excess)
+    
+    # Enforce collective rationality
+    @constraint(model, sum(payment) == imbalances[grand_coalition])
+
+    # Enforce locked excesses
+    @constraint(model, [c = locked_indices],
                 sum(payment[i] for i in coalition_indices[c]) - imbalances[coalitions[c]] == locked_excesses[coalitions[c]])
-    @constraint(model, nonneg, payment .>= 0)
 
-    # Optimize the model
-    optimize!(model)
-
-    # Extract the results
-    results = Dict()
-    for (i, client) in enumerate(clients)
-        results[client] = value(payment[i])
+    solution = optimize!(model)
+    if termination_status(model) == MOI.OPTIMAL
+        #println("Optimal solution found")
+        #println("Objective value: ", objective_value(model))
+        #println("Dual values of excess constraints: ", dual.(excess_cons))
+        dual_values = dual.(excess_cons)
+        new_locked_excesses = Dict{Vector{String}, Float64}()
+        for i in eachindex(dual_values)
+            if dual_values[i] < -1e-6 # Check if the dual value is negative
+                #println("Negative dual value for coalition ", coalitions[i[1]], ": ", dual_values[i])
+                # Lock the excess for this coalition
+                new_locked_excesses[coalitions[i[1]]] = objective_value(model)
+            end
+        end
+        payments = Dict{String, Float64}()
+        for (idx, client) in enumerate(clients)
+            payments[client] = value.(payment[idx])
+        end
+        return objective_value(model), new_locked_excesses, payments
+    else
+        println("No optimal solution found")
+        println("Checking if all coalitions are locked...")
+        found = false
+        # The problem is unbounded if all coalitions are locked, so we check if that is the case
+        for c in 1:C
+            if c != gc_idx && !(c in locked_indices)
+                println(coalitions[c])
+                found = true
+            end
+        end
+        if found
+            println("Not all coalitions are locked, the problem is unbounded and there is an error")
+        else
+            println("All coalitions are locked, the nucleolus has been found")
+        end
     end
-    max_excess_val = value(max_excess)
-
-    return max_excess_val, results, results
 end

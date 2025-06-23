@@ -1,7 +1,7 @@
 using Combinatorics, NLsolve, HiGHS, JuMP, Gurobi
 # Initializing the Gurobi environment
 # This is necessary to surpress some of the Gurobi output
-const GUROBI_ENV = Gurobi.Env()
+#const GUROBI_ENV = Gurobi.Env()
 
 
 function calculate_allocations(
@@ -311,11 +311,16 @@ function gately_point(clients, imbalance_costs)
     d = 0
     try
         d = ((A-1)*total_imbalance-sum(v_without))/(total_imbalance-sum(v))
+        if isnan(d)
+            error("d is NaN")
+        end
     catch e
         println("Error in calculating propensity to disrupt: ", e)
         println("Likely cause: all imbalances have the same sign, or no imbalance at all")
         println("Returning solitary client imbalance costs")
-        gately_distribution = v
+        for (idx, client) in enumerate(clients)
+            gately_distribution[client] = v[idx]
+        end
         return gately_distribution
     end
 
@@ -364,6 +369,8 @@ function gately_point_hourly(clients, hourly_imbalances, systemData)
     upreg_price = systemData["upreg_price"]
     downreg_price = systemData["downreg_price"]
     coalitions = collect(combinations(clients))
+    C = length(clients)
+    
     gately_distribution = Dict{String, Float64}()
     T = length(hourly_imbalances[[clients[1]]])
     for client in clients

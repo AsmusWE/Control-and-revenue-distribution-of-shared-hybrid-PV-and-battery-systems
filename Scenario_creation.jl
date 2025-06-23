@@ -4,8 +4,8 @@ function generate_scenarios(clients, demandDF, start_hour; num_scenarios = 100, 
     if start_idx === nothing
         error("No value after start_hour $start_hour found in demandDF[:HourUTC_datetime]")
     end
-    # Filter the demandDF to only include data after the start_hour
-    demandDF = demandDF[start_idx:end, :]
+    # Filter the demandDF to only include data before the start_hour
+    demandDF = demandDF[1:start_idx, :]
     
     # Create a dictionary to store the scenarios
     total_scenarios = div(size(demandDF)[1], scen_length, RoundDown)

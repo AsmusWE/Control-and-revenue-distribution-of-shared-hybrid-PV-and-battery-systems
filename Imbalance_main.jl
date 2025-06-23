@@ -12,10 +12,10 @@ Random.seed!(1) # Set seed for reproducibility
 systemData, clients = load_data()
 # Removing solar park owner "Z" and other clients as needed
 clients = filter(x -> x != "Z", clients)
-clients = filter(x -> x != "A", clients)
-clients = filter(x -> x != "G", clients)
-clients = filter(x -> !(x in ["W", "T", "P", "V", "J", "F","R","K"]), clients)
-clients = filter(x -> x != "I", clients)
+#clients = filter(x -> x != "A", clients)
+#clients = filter(x -> x != "G", clients)
+#clients = filter(x -> !(x in ["W", "T", "P", "V", "J", "F","R","K"]), clients)
+#clients = filter(x -> x != "I", clients)
 #clients = filter(x -> x in ["L", "Q"], clients)
 
 coalitions = collect(combinations(clients))
@@ -33,8 +33,8 @@ demand_scenarios = generate_scenarios(clients, systemData["price_prod_demand_df"
 systemData["demand_scenarios"] = demand_scenarios
 
 # Accepted forecast types: "perfect", "scenarios", "noise"
-systemData["demand_forecast"] = "scenarios"
-systemData["pv_forecast"] = "scenarios"
+systemData["demand_forecast"] = "noise"
+systemData["pv_forecast"] = "noise"
 println("Imbalance calculation time, all coalitions :")
 #imbalances, hourly_imbalances, bids  = @time period_imbalance(systemData, clients, start_hour, sim_days; threads = false)
 
@@ -46,8 +46,8 @@ allocations = [
     #"gately_daily",
     #"gately_hourly",
     "full_cost",
-    "reduced_cost",
-    "nucleolus"
+    #"reduced_cost",
+    #"nucleolus"
 ]
 
 # Calculating allocations
@@ -93,5 +93,6 @@ plot_variance(
     daily_cost_MWh_imbalance,
     imbalances,
     plot_client,
-    sim_days
+    sim_days;
+    outliers = false
 )

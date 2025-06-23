@@ -71,10 +71,6 @@ function plot_results(
             end
         end
     end
-    for alloc in allocations
-        println("Allocation: ", alloc)
-        println("Cost per MWh Imbalance: ", cost_imbalance[alloc])
-    end
     p_imbalance_cost = plot(title="Imbalance compared to no cooperation", xlabel="Client", ylabel="Imbalance factor as part of grand coalition", xticks=(1:length(plotKeys), plotKeys), xrotation=45)
     for alloc in allocations
         if haskey(cost_imbalance, alloc)
@@ -126,7 +122,8 @@ allocation_costs,
 daily_cost_MWh_imbalance,
 imbalances,
 plot_client,
-sim_days
+sim_days;
+outliers = true
 )
 allocation_labels = Dict(
     "shapley" => ("Shapley", :red),
@@ -155,7 +152,7 @@ cost_imbalance = Dict{String, Dict{String, Float64}}()
 for (i, alloc) in enumerate(allocations)
     label, color = allocation_labels[alloc]
     plotVals = [daily_cost_MWh_imbalance[plot_client, alloc, day] for day in 1:sim_days]
-    boxplot!(fill(i, sim_days), plotVals; color=color, markerstrokecolor=:black, label=label)
+    boxplot!(fill(i, sim_days), plotVals; color=color, markerstrokecolor=:black, label=label, outliers=outliers)
     mean_val_unweighted = sum(plotVals) / length(plotVals)
     mean_val_weighted = allocation_costs[alloc][plot_client]/imbalances[[plot_client]]
     #annotate!(i, mean_val_unweighted, text(string(round(mean_val_unweighted, digits=4)), :black, :center, 8))

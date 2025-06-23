@@ -1,4 +1,14 @@
 using Plots
+
+function scale_distribution!(distribution, demand, clients)
+    # Divide distribution factor by the sum of demand for each client
+    scaled_distribution = Dict()
+    for client in clients
+        scaled_distribution[client] = distribution[client]/sum(demand[!,client])
+    end
+    return scaled_distribution
+end
+
 function plot_results(
     allocations,
     systemData,
@@ -37,7 +47,7 @@ function plot_results(
     cost_MWh = Dict()
     for alloc in allocations
         if haskey(allocation_costs, alloc)
-            cost_MWh[alloc] = scale_distribution(allocation_costs[alloc], dayData["price_prod_demand_df"], clients_without_missing_data)
+            cost_MWh[alloc] = scale_distribution!(allocation_costs[alloc], dayData["price_prod_demand_df"], clients_without_missing_data)
         end
     end
     p_fees_MWh = plot(title="Imbalance per MWh demand", xlabel="Client", ylabel="Imbalance per MWh", xticks=(1:length(plotKeys), plotKeys), xrotation=45)

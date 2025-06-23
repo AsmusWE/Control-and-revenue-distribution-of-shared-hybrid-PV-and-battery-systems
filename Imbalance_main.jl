@@ -1,14 +1,23 @@
-#include("Bat_arbitrage.jl")
+# Imbalance_main.jl
+# Main script for running coalition imbalance and allocation analysis
+# Author: Asmus Winther Eriksen
+
+# --- Project Modules ---
 include("Data_import.jl")
 include("Scenario_creation.jl")
 include("imbalance_functions.jl")
 include("Game_theoretic_functions.jl")
 include("Plotting.jl")
+
+# --- External Packages ---
 using Plots, Dates, Random, Combinatorics, StatsPlots
 
 
 Random.seed!(1) # Set seed for reproducibility
 
+# =========================
+# 1. Data Loading & Setup
+# =========================
 systemData, clients = load_data()
 # Removing solar park owner "Z" and other clients as needed
 clients = filter(x -> x != "Z", clients)
@@ -27,16 +36,14 @@ systemData["downreg_price"] = 1
 # First hour 2024-04-16T22:00:00
 # Last hour 2025-04-25T23:00:00
 start_hour = DateTime(2024, 8, 12, 0, 0, 0)
-sim_days = 36
-
-demand_scenarios = generate_scenarios(clients, systemData["price_prod_demand_df"], start_hour; num_scenarios=100)
+sim_days = 30
+num_scenarios = 30
+demand_scenarios = generate_scenarios(clients, systemData["price_prod_demand_df"], start_hour; num_scenarios=num_scenarios)
 systemData["demand_scenarios"] = demand_scenarios
 
 # Accepted forecast types: "perfect", "scenarios", "noise"
 systemData["demand_forecast"] = "noise"
 systemData["pv_forecast"] = "noise"
-println("Imbalance calculation time, all coalitions :")
-#imbalances, hourly_imbalances, bids  = @time period_imbalance(systemData, clients, start_hour, sim_days; threads = false)
 
 allocations = [
     "shapley",
@@ -46,16 +53,16 @@ allocations = [
     #"gately_daily",
     #"gately_hourly",
     "full_cost",
-    #"reduced_cost",
+    "reduced_cost",
     #"nucleolus"
 ]
 
+# =========================
+# 2. Imbalance Calculation and allocation
+# =========================
 # Calculating allocations
 println("Calculating allocations...")
 daily_cost_MWh_imbalance, allocation_costs, imbalances, hourly_imbalances = allocation_variance(allocations, clients, coalitions, systemData, start_hour, sim_days)
-#allocation_costs = calculate_allocations(
-#    allocations, clients, coalitions, imbalances, hourly_imbalances, systemData
-#)
 
 # Checking stability
 max_instability = Dict{String, Float64}()

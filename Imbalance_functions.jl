@@ -128,12 +128,13 @@ function calculate_bids(coalitions, systemData)
 end
 
 function period_imbalance(systemData, clients, startDay, days; threads=true, printing=true)
-    # This function calculates the imbalance for a given period
-    # It returns the imbalance for the given period
-    # The period is given in hours
+    # Calculate the starting hour index
     start_hour = findfirst(x -> x >= startDay, systemData["price_prod_demand_df"][!,"HourUTC_datetime"])
+    n_coalitions = length(collect(combinations(clients)))
+    hours = days * 24
+
     if threads
-        # Initialize thread-specific dictionaries to avoid concurrent writes
+        # Thread-local storage for results
         thread_local_imbalances = Dict(tid => Dict() for tid in 1:Threads.nthreads())
         thread_local_hourly_imbalance = Dict(tid => Dict() for tid in 1:Threads.nthreads())
         thread_local_bids = Dict(tid => Dict() for tid in 1:Threads.nthreads())
@@ -143,73 +144,45 @@ function period_imbalance(systemData, clients, startDay, days; threads=true, pri
                 println("Calculating imbalances for day ", day, " of ", days)
             end
             tid = Threads.threadid()
-            dayData = deepcopy(systemData)
             day_start = start_hour + (day - 1) * 24
             day_end = day_start + 23
+            dayData = deepcopy(systemData)
             dayData["price_prod_demand_df"] = systemData["price_prod_demand_df"][day_start:day_end, :]
             daily_imbalance_cost, bids, hourly_imbalance = calculate_imbalance(dayData, clients)
-            
-            # Store daily imbalances in the thread-specific dictionary
             for (coalition, imbalance) in daily_imbalance_cost
-                if haskey(thread_local_imbalances[tid], coalition)
-                    thread_local_imbalances[tid][coalition] += imbalance
-                else
-                    thread_local_imbalances[tid][coalition] = imbalance
-                    # Initialize the hourly imbalance and bids for this coalition
-                    thread_local_hourly_imbalance[tid][coalition] = zeros(days*24)
-                    thread_local_bids[tid][coalition] = zeros(days*24)
+                thread_local_imbalances[tid][coalition] = get(thread_local_imbalances[tid], coalition, 0.0) + imbalance
+                if !haskey(thread_local_hourly_imbalance[tid], coalition)
+                    thread_local_hourly_imbalance[tid][coalition] = zeros(hours)
+                    thread_local_bids[tid][coalition] = zeros(hours)
                 end
-                # Store the hourly imbalance and bids for this coalition
                 thread_local_hourly_imbalance[tid][coalition][(day-1)*24+1:day*24] = hourly_imbalance[coalition]
                 thread_local_bids[tid][coalition][(day-1)*24+1:day*24] = bids[coalition]
             end
         end
-
-        # Merge thread-specific dictionaries into a single dictionary
+        # Merge thread-local results
         period_imbalances = Dict()
         period_hourly_imbalance = Dict()
-        period_bids = Dict()
-
         for thread_dict in values(thread_local_imbalances)
             for (coalition, imbalance) in thread_dict
-                if haskey(period_imbalances, coalition)
-                    period_imbalances[coalition] += imbalance
-                else
-                    period_imbalances[coalition] = imbalance
-                end
+                period_imbalances[coalition] = get(period_imbalances, coalition, 0.0) + imbalance
             end
         end
-
         for thread_dict in values(thread_local_hourly_imbalance)
             for (coalition, hourly_imbalance) in thread_dict
                 if !haskey(period_hourly_imbalance, coalition)
-                    period_hourly_imbalance[coalition] = zeros(days*24)
-                end    
-                period_hourly_imbalance[coalition] += hourly_imbalance   
-            end
-        end
-
-        # Merge bids from all threads
-        for thread_dict in values(thread_local_bids)
-            for (coalition, bid) in thread_dict
-                if !haskey(period_bids, coalition)
-                    period_bids[coalition] = zeros(days*24)
-                end    
-                period_bids[coalition] += bid   
+                    period_hourly_imbalance[coalition] = zeros(hours)
+                end
+                period_hourly_imbalance[coalition] += hourly_imbalance
             end
         end
     else
-        # If not using threads, calculate imbalances in a single loop
+        # Single-threaded calculation
         period_imbalances = Dict()
         period_hourly_imbalance = Dict()
-        period_bids = Dict()
-        # Initialize dictionaries to hold results
         for coalition in collect(combinations(clients))
             period_imbalances[coalition] = 0.0
-            period_hourly_imbalance[coalition] = zeros(days*24)
-            period_bids[coalition] = zeros(days*24)
+            period_hourly_imbalance[coalition] = zeros(hours)
         end
-
         for day in 1:days
             if printing
                 println("Calculating imbalances for day ", day, " of ", days)
@@ -219,13 +192,12 @@ function period_imbalance(systemData, clients, startDay, days; threads=true, pri
             dayData = deepcopy(systemData)
             dayData["price_prod_demand_df"] = systemData["price_prod_demand_df"][day_start:day_end, :]
             daily_imbalance_cost, bids, hourly_imbalance = calculate_imbalance(dayData, clients)
-
             for (coalition, imbalance) in daily_imbalance_cost
                 period_hourly_imbalance[coalition][(day-1)*24+1:day*24] = hourly_imbalance[coalition]
-                period_bids[coalition][(day-1)*24+1:day*24] = bids[coalition]
                 period_imbalances[coalition] += imbalance
             end
         end
     end
     return period_imbalances, period_hourly_imbalance
 end
+

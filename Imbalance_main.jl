@@ -20,12 +20,12 @@ Random.seed!(1) # Set seed for reproducibility
 # =========================
 systemData, clients = load_data()
 # Removing solar park owner "Z" and other clients as needed
-clients = filter(x -> x != "Z", clients)
-clients = filter(x -> x != "A", clients)
-clients = filter(x -> x != "G", clients)
-clients = filter(x -> !(x in ["W", "T", "P", "V", "J", "F","R","K"]), clients)
-clients = filter(x -> x != "I", clients)
-#clients = filter(x -> x in ["L", "Q"], clients)
+#clients = filter(x -> x != "Z", clients)
+#clients = filter(x -> x != "A", clients)
+#clients = filter(x -> x != "G", clients)
+#clients = filter(x -> !(x in ["W", "T", "P", "V", "J", "F","R","K"]), clients)
+#clients = filter(x -> x != "I", clients)
+clients = filter(x -> x in ["I","L", "Q"], clients)
 
 coalitions = collect(combinations(clients))
 

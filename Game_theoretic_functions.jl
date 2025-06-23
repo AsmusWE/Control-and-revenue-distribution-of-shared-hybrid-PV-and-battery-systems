@@ -1,7 +1,7 @@
-using Combinatorics, NLsolve, HiGHS, JuMP, Gurobi
+using Combinatorics, NLsolve, HiGHS, JuMP#, Gurobi
 # Initializing the Gurobi environment
 # This is necessary to surpress some of the Gurobi output
-const GUROBI_ENV = Gurobi.Env()
+#const GUROBI_ENV = Gurobi.Env()
 
 
 function calculate_allocations(
@@ -364,8 +364,10 @@ function nucleolus(clients, imbalances)
                 locked_excesses_vec[idx] = val
             end
         catch e
+            # Handle the case where no optimal solution is found
             nlocked = count(!isnothing, locked_excesses_vec)
             if nlocked == length(coalitions) - 1
+                # If all coalitions except grand coalition are locked, we can return the nucleolus
                 # Return as Dict for compatibility
                 locked_dict = Dict(coalitions[i] => v for (i, v) in enumerate(locked_excesses_vec) if !isnothing(v))
                 return locked_dict, payments
@@ -388,6 +390,8 @@ function nucleolus_optimize(clients, imbalances_vec, locked_excesses_vec, coalit
 
     model = Model(HiGHS.Optimizer)
     set_silent(model)
+    #model = Model(() -> Gurobi.Optimizer(GUROBI_ENV))
+    #set_optimizer_attribute(model, "OutputFlag", 0)
 
     @variable(model, payment[1:A])
     @variable(model, max_excess)

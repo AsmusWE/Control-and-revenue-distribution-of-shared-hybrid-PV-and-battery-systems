@@ -2,15 +2,21 @@ using CSV
 using DataFrames
 using TimeZones
 
-function load_data(;batCap = 100.0, initSoC = 0.0)
-    
+"""
+    load_data() -> Dict, Vector{String}
+
+Load and preprocess demand, PV production, price, and forecast data for all clients.
+Returns a dictionary with system data and a vector of clients without missing data.
+"""
+function load_data()
+    # --- Load demand data ---
     demand = CSV.read("Data/consumption_data.csv", DataFrame)
-    #testTimeCET = ZonedDateTime(String(demand[!,"datetime_cet"][1]), "yyyy-mm-dd HH:MM:SSz")
     demand[!, :HourUTC_datetime] = DateTime.(demand[:, :datetime_cet], DateFormat("yyyy-mm-dd HH:MM:SSz")) .- Hour(1)
-    demand = select!(demand, Not(:datetime_cet))
+    select!(demand, Not(:datetime_cet))
     demand[!, :Z] .= 0
 
-    # NOTE: Added client Z who is the PV owner
+    # --- Define PV ownership ---
+    # Note: Z is the solar park owner
     clientPVOwnership = Dict(
         "A" => 0.143, "B" => 0.006, "C" => 0.009, "D" => 0.007, "E" => 0.005, 
         "F" => 0.003, "G" => 0.143, "H" => 0.014, "I" => 0.05, "J" => 0.003, 
@@ -19,75 +25,28 @@ function load_data(;batCap = 100.0, initSoC = 0.0)
         "U" => 0.007, "V" => 0.002, "W" => 0.001, "X" => 0.001, "Y" => 0.01,
         "Z" => 0.487
     )
-    clientBatteryOwnership = clientPVOwnership
 
+    # --- Load and rescale PV production ---
     pvProduction = CSV.read("Data/ProductionMunicipalityHour.csv", DataFrame; decimal=',')
     pvProduction[!, :HourUTC_datetime] = DateTime.(pvProduction[:, :HourUTC], DateFormat("yyyy-mm-dd HH:MM:SS"))
-    # Rescale PV production to align with plant size 
     plant_size = 14.0 # MW
     old_plant_size = maximum(pvProduction[:, :SolarMWh])
-    rename!(pvProduction,:SolarMWh => :SolarMWh_unscaled)
-    pvProduction[!, :SolarMWh] = pvProduction[!, :SolarMWh_unscaled].*plant_size / old_plant_size
+    rename!(pvProduction, :SolarMWh => :SolarMWh_unscaled)
+    pvProduction[!, :SolarMWh] = pvProduction[!, :SolarMWh_unscaled] .* plant_size / old_plant_size
     pvProduction = select(pvProduction, [:HourUTC_datetime, :SolarMWh])
 
+    # --- Load price data ---
     priceData = CSV.read("Data/Elspotprices.csv", DataFrame; decimal=',')
     priceData[!, :HourUTC_datetime] = DateTime.(priceData[:, :HourUTC], DateFormat("yyyy-mm-dd HH:MM:SS"))
     priceData = select(priceData, [:HourUTC_datetime, :SpotPriceDKK])
 
-    # Combine the two dataframes based on the HourUTC column
-    combinedData = innerjoin(pvProduction, priceData, demand , on=:HourUTC_datetime)
+    # --- Combine demand and PV production ---
+    combinedData = innerjoin(pvProduction, demand, on=:HourUTC_datetime)
 
+    # --- Prepare client list ---
+    clients = sort(collect(keys(clientPVOwnership)))
 
-
-    # Adding tariffs
-    # Elafgift is 4 oere/kWh = 40 DKK/MWh for companies
-    elafgift = 40 # DKK/MWh
-    # Source: https://energinet.dk/el/elmarkedet/tariffer/aktuelle-tariffer/
-    # Energinet 135 DKK/MWh import, 11.5 DKK/MWh export
-    importTariffEnerginet = 135 # DKK/MWh
-    exportTariffEnerginet = 11.5 # DKK/MWh
-    # N1 
-    exportTariffN1 = 11 # DKK/MWh
-    importTariffN1Low = 55.6 # DKK/MWh
-    importTariffN1High = 166.8 # DKK/MWh
-    importTariffN1Peak = 333.7 # DKK/MWh
-    # Initialize priceImp with the base import tariff from Energinet
-    priceImp = combinedData[:, :SpotPriceDKK] .+ importTariffEnerginet .+ elafgift
-    # Initialize tariffSum to store the sum of all tariffs for each hour
-    tariffSum = fill(0.0, size(combinedData, 1))
-    # Apply time-based tariffs
-    for i in 1:size(combinedData, 1)
-        timestamp = combinedData[i, :HourUTC_datetime]
-        weekday = dayofweek(timestamp)
-        hour = Dates.hour(timestamp)
-        month = Dates.month(timestamp)
-
-        if hour >= 0 && hour < 6
-            priceImp[i] += importTariffN1Low
-            tariffSum[i] += importTariffN1Low
-        elseif (month in 4:9) && (weekday in [6, 7]) && (hour >= 6 && hour < 24)
-            priceImp[i] += importTariffN1Low
-            tariffSum[i] += importTariffN1Low
-        elseif (month in 10:12 || month in 1:3) && (weekday in 1:5) && (hour >= 6 && hour < 21)
-            priceImp[i] += importTariffN1Peak
-            tariffSum[i] += importTariffN1Peak
-        else
-            priceImp[i] += importTariffN1High
-            tariffSum[i] += importTariffN1High
-        end
-        tariffSum[i] += importTariffEnerginet + elafgift + exportTariffEnerginet + exportTariffN1
-    end
-    priceExp = combinedData[:, :SpotPriceDKK] .- exportTariffEnerginet .- exportTariffN1
-
-    # Adding to combinedData
-    combinedData[!, :PriceImp] = priceImp
-    combinedData[!, :PriceExp] = priceExp
-    combinedData[!, :TariffSum] = tariffSum
-
-    clients = keys(clientPVOwnership)
-    clients = sort(collect(clients))
-
-    # Loading forecast data, this is done no matter what to keep datapoints constant between runs
+    # --- Load and rescale PV forecast ---
     pv_forecast = CSV.read("Data/Solar_Forecasts_Hour.csv", DataFrame; decimal=',')
     pv_forecast[!, :HourUTC_datetime] = DateTime.(pv_forecast[:, :HourUTC], DateFormat("yyyy-mm-dd HH:MM:SS"))
     rename!(pv_forecast, :ForecastCurrent => :ForecastCurrent_unscaled)
@@ -95,44 +54,20 @@ function load_data(;batCap = 100.0, initSoC = 0.0)
     pv_forecast[!, :PVForecast] = pv_forecast[!, :ForecastCurrent_unscaled] .* plant_size / old_plant_size
     pv_forecast = select(pv_forecast, [:HourUTC_datetime, :PVForecast])
 
-    # Create forecast columns for each client's demand
-    #for client in clients
-    #    forecast_column_name = Symbol("Forecast_", client)
-    #    combinedData[!, forecast_column_name] = combinedData[!, client] .* (1 .+ 0.1 .* randn(size(combinedData, 1)))
-    #end
+    # --- Merge forecast with combined data ---
     combinedData = innerjoin(combinedData, pv_forecast, on=:HourUTC_datetime)
-    
 
-    missing_data_counts = Dict()
-    for client in clients
-        missing_data_counts[client] = count(ismissing, demand[:, client])
-    end
+    # --- Filter clients with missing data ---
+    missing_data_counts = Dict(client => count(ismissing, demand[:, client]) for client in clients)
     clients_without_missing_data = filter(client -> missing_data_counts[client] == 0, clients)
-    #println("Clients without missing data: ", clients_without_missing_data)
 
-    # Dropping columns with missing values
-    #demand = select!(demand, Not([:"C",:"P",:"B",:"M",:"D",:"E",:"R"]))
-
-    # Remove weekend hours from combinedData
-    #combinedData = filter(row -> dayofweek(row[:HourUTC_datetime]) in 1:4, combinedData)
-    # Remove holiday hours from combinedData
-    # TODO: Add more holidays 
-    #combinedData = filter(row -> !(row[:HourUTC_datetime] in DateTime(2024, 12, 24):Day(1):DateTime(2025, 1, 1)), combinedData)
-
-
-    #println("Missing data points for each client:")
-    #println(missing_data_counts)
-
+    # --- Collect system data ---
     systemData = Dict(
         "demand" => demand,
         "clientPVOwnership" => clientPVOwnership,
-        "clientBatteryOwnership" => clientBatteryOwnership,
-        "initSoC" => initSoC,
-        "batCap" => batCap,
         "clients" => clients,
         "price_prod_demand_df" => combinedData
     )
     return systemData, clients_without_missing_data
 end
 
-    

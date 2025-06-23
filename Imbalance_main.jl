@@ -46,14 +46,14 @@ systemData["demand_forecast"] = "noise"
 systemData["pv_forecast"] = "noise"
 
 allocations = [
-    "shapley",
-    "VCG",
-    "VCG_budget_balanced",
-    "gately_full",
+    #"shapley",
+    #"VCG",
+    #"VCG_budget_balanced",
+    #"gately_full",
     #"gately_daily",
     #"gately_hourly",
     "full_cost",
-    "reduced_cost",
+    #"reduced_cost",
     #"nucleolus"
 ]
 
@@ -62,7 +62,7 @@ allocations = [
 # =========================
 # Calculating allocations
 println("Calculating allocations...")
-daily_cost_MWh_imbalance, allocation_costs, imbalances, hourly_imbalances = allocation_variance(allocations, clients, coalitions, systemData, start_hour, sim_days)
+daily_cost_MWh_imbalance, allocation_costs, imbalances, hourly_imbalances = @time allocation_variance(allocations, clients, coalitions, systemData, start_hour, sim_days)
 
 # Checking stability
 max_instability = Dict{String, Float64}()

@@ -10,7 +10,7 @@ include("Game_theoretic_functions.jl")
 include("Plotting.jl")
 
 # --- External Packages ---
-using Plots, Dates, Random, Combinatorics, StatsPlots
+using Plots, Dates, Random, Combinatorics, StatsPlots, Serialization
 
 
 Random.seed!(1) # Set seed for reproducibility
@@ -20,13 +20,8 @@ Random.seed!(1) # Set seed for reproducibility
 # =========================
 systemData, clients = load_data()
 # Removing solar park owner "Z" and other clients as needed
-#clients = filter(x -> x != "Z", clients)
-#clients = filter(x -> x != "A", clients)
-#clients = filter(x -> x != "G", clients)
-#clients = filter(x -> !(x in ["W", "T", "P", "V", "J", "F","R","K"]), clients)
-#clients = filter(x -> x != "I", clients)
-clients = filter(x -> x in ["I","L", "Q"], clients)
-
+clients = filter(x -> x != "Z", clients)
+clients = filter(x -> !(x in ["W", "N", "V", "J", "O", "T", "Y"]), clients)
 coalitions = collect(combinations(clients))
 
 # We assume that upregulation is more expensive than downregulation
@@ -35,9 +30,9 @@ systemData["downreg_price"] = 1
 
 # First hour 2024-04-16T22:00:00
 # Last hour 2025-04-25T23:00:00
-start_hour = DateTime(2024, 8, 12, 0, 0, 0)
-sim_days = 30
-num_scenarios = 30
+start_hour = DateTime(2025, 3, 1, 0, 0, 0)
+sim_days = 31
+num_scenarios = 60
 demand_scenarios = generate_scenarios(clients, systemData["price_prod_demand_df"], start_hour; num_scenarios=num_scenarios)
 systemData["demand_scenarios"] = demand_scenarios
 
@@ -46,15 +41,15 @@ systemData["demand_forecast"] = "noise"
 systemData["pv_forecast"] = "noise"
 
 allocations = [
-    #"shapley",
-    #"VCG",
-    #"VCG_budget_balanced",
-    #"gately_full",
+    "shapley",
+    "VCG",
+    "VCG_budget_balanced",
+    "gately_full",
     #"gately_daily",
-    #"gately_hourly",
-    #"full_cost",
+    "gately_hourly",
+    "full_cost",
     #"reduced_cost",
-    "nucleolus"
+    #"nucleolus"
 ]
 
 # =========================
@@ -82,24 +77,59 @@ println("Grand coalition imbalance: ", grand_coalition_imbalance)
 println("Sum of individual client imbalances: ", individual_imbalance_sum)
 println("Difference: ", grand_coalition_imbalance - individual_imbalance_sum)
 
-plot_results(
+# Calculating average relative imbalance cost
+relative_imbalance_cost = grand_coalition_imbalance / individual_imbalance_sum
+
+# Define a struct to hold all relevant plotting data
+struct PlotData
+    allocations::Vector{String}
+    systemData::Dict{String, Any}
+    allocation_costs::Dict{String, Any}
+    imbalances::Dict{Any, Any}
+    clients::Vector{String}
+    start_hour::DateTime
+    sim_days::Int
+    daily_cost_MWh_imbalance::Any
+end
+
+# Create an instance of PlotData
+plot_data = PlotData(
     allocations,
     systemData,
     allocation_costs,
     imbalances,
     clients,
     start_hour,
-    sim_days
+    sim_days,
+    daily_cost_MWh_imbalance
+)
+# Save plot_data to a local file
+serialize("plot_data_temp.jls", plot_data)
+
+# Use the struct for plotting
+plot_results(
+    plot_data.allocations,
+    plot_data.systemData,
+    plot_data.allocation_costs,
+    plot_data.imbalances,
+    plot_data.clients,
+    plot_data.start_hour,
+    plot_data.sim_days
 )
 
-plot_client = "N"
+#plot_client = "N"
 
-plot_variance(
-    allocations,
-    allocation_costs,
-    daily_cost_MWh_imbalance,
-    imbalances,
-    plot_client,
-    sim_days;
-    outliers = false
-)
+#plot_variance(
+#    plot_data.allocations,
+#    plot_data.allocation_costs,
+#    plot_data.daily_cost_MWh_imbalance,
+#    plot_data.imbalances,
+#    plot_client,
+#    plot_data.sim_days;
+#    outliers = false
+#)
+
+
+
+
+

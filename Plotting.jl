@@ -1,4 +1,4 @@
-using Plots
+using Plots, Serialization, CSV, DataFrames
 
 function scale_distribution!(distribution, demand, clients)
     # Divide distribution factor by the sum of demand for each client
@@ -81,7 +81,16 @@ function plot_results(
             end
         end
     end
-    p_imbalance_cost = plot(title="Imbalance compared to no cooperation", xlabel="Client", ylabel="Imbalance factor as part of grand coalition", xticks=(1:length(plotKeys), plotKeys), xrotation=45)
+    min_val = minimum([cost_imbalance[alloc][k] for alloc in allocations if haskey(cost_imbalance, alloc) for k in plotKeys])
+    lower_ylim = min(0.0, min_val - 0.05)  # Add a small margin below min_val, but not above 0
+    p_imbalance_cost = plot(
+        title="Imbalance compared to no cooperation",
+        xlabel="Client",
+        ylabel="Imbalance factor as part of grand coalition",
+        xticks=(1:length(plotKeys), plotKeys),
+        xrotation=45,
+        ylim=(-0.25, 1)
+    )
     for alloc in allocations
         if haskey(cost_imbalance, alloc)
             label, color = allocation_labels[alloc]
@@ -110,64 +119,108 @@ function plot_results(
     plotVals_total_demand = [total_MWh_demand[k] for k in plotKeys]
     bar!(p_total_demand, 1:length(plotKeys), plotVals_total_demand, label="Total MWh Demand")
     display(p_total_demand)
+end
 
-    # Plot demand for clients F and I
-    if ("F" in plotKeys || "I" in plotKeys) && false
-        p_clients = plot(title="Demand for Clients F and i", xlabel="Hour", ylabel="MWh Demand")
-        if "F" in plotKeys
-            client_F_demand = dayData["price_prod_demand_df"][!, Symbol("F")]
-            plot!(p_clients, 1:length(client_F_demand), client_F_demand, label="Client F Demand")
+function plot_all(all_noise::PlotData, all_scen::PlotData, nuc_noise::PlotData, nuc_scen::PlotData)
+    plotdata_list = [all_noise, all_scen, nuc_noise, nuc_scen]
+    plot_titles = [
+        "All, Noise",
+        "All, Scenario",
+        "Nucleolus, Noise",
+        "Nucleolus, Scenario"
+    ]
+    allocation_labels = Dict(
+        "shapley" => ("Shapley", :red),
+        "VCG" => ("VCG", :yellow),
+        "VCG_budget_balanced" => ("VCG Budget Balanced", :orange),
+        "gately_full" => ("Gately Full", :grey),
+        "gately_daily" => ("Gately Daily", :black),
+        "gately_hourly" => ("Gately Hourly", :lightgrey),
+        "full_cost" => ("Full Cost", :pink),
+        "reduced_cost" => ("Reduced Cost", :lightblue),
+        "nucleolus" => ("Nucleolus", :green)
+    )
+    all_rows = DataFrame()
+    for idx in 1:4
+        pd = plotdata_list[idx]
+        allocations = pd.allocations
+        allocation_costs = pd.allocation_costs
+        imbalances = pd.imbalances
+        clients = pd.clients
+        plotKeys = clients
+        scenario = plot_titles[idx]
+        # Calculate grand coalition and average relative imbalance
+        grand_coalition_imbalance = imbalances[clients]
+        individual_imbalance_sum = sum(imbalances[[client]] for client in clients)
+        average_relative_imbalance = grand_coalition_imbalance / individual_imbalance_sum
+        for alloc in allocations
+            if haskey(allocation_costs, alloc)
+                for client in plotKeys
+                    value = allocation_costs[alloc][client] / imbalances[[client]]
+                    push!(all_rows, (
+                        Scenario = scenario,
+                        Allocation = alloc,
+                        Client = client,
+                        Value = value,
+                        AverageRelativeImbalance = average_relative_imbalance,
+                    ))
+                end
+            end
         end
-        if "I" in plotKeys
-            client_I_demand = dayData["price_prod_demand_df"][!, Symbol("I")]
-            plot!(p_clients, 1:length(client_I_demand), client_I_demand, label="Client I Demand")
-        end
-        display(p_clients)
     end
+    CSV.write("plot_data.csv", all_rows)
+    return all_rows
 end
 
 function plot_variance(
-allocations,
-allocation_costs,
-daily_cost_MWh_imbalance,
-imbalances,
-plot_client,
-sim_days;
-outliers = true
+    allocations,
+    allocation_costs,
+    daily_cost_MWh_imbalance,
+    imbalances,
+    plot_client,
+    sim_days;
+    outliers = true
 )
-allocation_labels = Dict(
-    "shapley" => ("Shapley", :red),
-    "VCG" => ("VCG", :yellow),
-    "VCG_budget_balanced" => ("VCG Budget Balanced", :orange),
-    "gately_full" => ("Gately Full", :grey),
-    "gately_daily" => ("Gately Daily", :black),
-    "gately_hourly" => ("Gately Hourly", :lightgrey),
-    "full_cost" => ("Full Cost", :pink),
-    "reduced_cost" => ("Reduced Cost", :lightblue),
-    "nucleolus" => ("Nucleolus", :green)
-)
+    allocation_labels = Dict(
+        "shapley" => ("Shapley", :red),
+        "VCG" => ("VCG", :yellow),
+        "VCG_budget_balanced" => ("VCG Budget Balanced", :orange),
+        "gately_full" => ("Gately Full", :grey),
+        "gately_daily" => ("Gately Daily", :black),
+        "gately_hourly" => ("Gately Hourly", :lightgrey),
+        "full_cost" => ("Full Cost", :pink),
+        "reduced_cost" => ("Reduced Cost", :lightblue),
+        "nucleolus" => ("Nucleolus", :green)
+    )
 
-p_variance = plot(
-    title = "Imbalance compared to no cooperation, client $plot_client",
-    xlabel = "Allocation",
-    ylabel = "Imbalance compared to no cooperation",
-    xticks = (1:length(allocations), [allocation_labels[a][1] for a in allocations]),
-    legend = false,
-    #legend=:outertopright,
-    xrotation = 45
-)
-# Cost per MWh imbalance
-cost_imbalance = Dict{String, Dict{String, Float64}}()
+    p_variance = plot(
+        title = "Imbalance compared to no cooperation, client $plot_client",
+        xlabel = "Allocation",
+        ylabel = "Imbalance compared to no cooperation",
+        xticks = (1:length(allocations), [allocation_labels[a][1] for a in allocations]),
+        legend = false,
+        #legend=:outertopright,
+        xrotation = 45
+    )
+    # Cost per MWh imbalance
+    cost_imbalance = Dict{String, Dict{String, Float64}}()
 
-for (i, alloc) in enumerate(allocations)
-    label, color = allocation_labels[alloc]
-    plotVals = [daily_cost_MWh_imbalance[plot_client, alloc, day] for day in 1:sim_days]
-    boxplot!(fill(i, sim_days), plotVals; color=color, markerstrokecolor=:black, label=label, outliers=outliers)
-    mean_val_unweighted = sum(plotVals) / length(plotVals)
-    mean_val_weighted = allocation_costs[alloc][plot_client]/imbalances[[plot_client]]
-    #annotate!(i, mean_val_unweighted, text(string(round(mean_val_unweighted, digits=4)), :black, :center, 8))
-    # Add a red line for the weighted mean
-    plot!([i-0.4, i+0.4], [mean_val_weighted, mean_val_weighted], color=:blue, linewidth=2, label=false)
+    for (i, alloc) in enumerate(allocations)
+        label, color = allocation_labels[alloc]
+        plotVals = [daily_cost_MWh_imbalance[plot_client, alloc, day] for day in 1:sim_days]
+        boxplot!(fill(i, sim_days), plotVals; color=color, markerstrokecolor=:black, label=label, outliers=outliers)
+        mean_val_unweighted = sum(plotVals) / length(plotVals)
+        mean_val_weighted = allocation_costs[alloc][plot_client]/imbalances[[plot_client]]
+        #annotate!(i, mean_val_unweighted, text(string(round(mean_val_unweighted, digits=4)), :black, :center, 8))
+        # Add a red line for the weighted mean
+        plot!([i-0.4, i+0.4], [mean_val_weighted, mean_val_weighted], color=:blue, linewidth=2, label=false)
+    end
+    display(p_variance)
 end
-display(p_variance)
-end
+
+plot_data_all_noise = deserialize("plot_data_all_noise.jls")
+plot_data_all_scenarios = deserialize("plot_data_all_scen.jls")
+plot_data_nuc_noise = deserialize("plot_data_nuc_noise.jls")
+plot_data_nuc_scenarios = deserialize("plot_data_nuc_scen.jls")
+
+plot_all(plot_data_all_noise, plot_data_all_scenarios, plot_data_nuc_noise, plot_data_nuc_scenarios)

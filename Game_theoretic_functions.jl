@@ -229,12 +229,13 @@ function gately_point(clients, imbalance_costs)
 
     # Finding propensity to disrupt with the closed form solution
     d = ((A-1)*total_imbalance-sum(v_without))/(total_imbalance-sum(v))
-    if isnan(d)
-        println("d is NaN")
-        println("Likely cause: all imbalances have the same sign, or no imbalance at all")
-        println("Returning solitary client imbalance costs")
+    if isnan(d) || isinf(d)
+        #println("d is NaN or infinite")
+        #println("Likely cause: all imbalances have the same sign, or no imbalance at all")
+        #println("Returning solitary client imbalance costs")
         for (idx, client) in enumerate(clients)
             gately_distribution[client] = v[idx]
+            #println("Client: ", client, ", Gately distribution: ", gately_distribution[client])
         end
         return gately_distribution
     end
@@ -269,6 +270,10 @@ function gately_point_hourly(clients, hourly_imbalances, systemData)
         end
         # Calculate Gately point for the current hour and add to the distribution
         gately_hour = gately_point(clients, imbalance_costs)
+        # Check for NaN values in the Gately distribution for the current hour
+        if any(isnan, values(gately_hour))
+            println("Warning: NaN detected in Gately distribution for hour $t.")
+        end
         for client in clients
             gately_distribution[client] += gately_hour[client]
         end

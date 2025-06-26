@@ -1,0 +1,27 @@
+Scenario,Allocation,MaxInstability
+"All, Noise",shapley,-0.011216303246101234
+"All, Noise",VCG,-0.22352515983025667
+"All, Noise",VCG_budget_balanced,-0.035063784612049176
+"All, Noise",gately_full,-0.06456464844987408
+"All, Noise",gately_hourly,-0.03137665867228634
+"All, Noise",full_cost,-2.842170943040401e-14
+"All, Scenario",shapley,8.45894535277671
+"All, Scenario",VCG,-0.319243302816522
+"All, Scenario",VCG_budget_balanced,-0.018152630442955342
+"All, Scenario",gately_full,-0.026978951130217865
+"All, Scenario",gately_hourly,-0.015385043149649391
+"All, Scenario",full_cost,2.2737367544323206e-13
+"Nucleolus, Noise",shapley,-0.5098153368413136
+"Nucleolus, Noise",VCG,-3.477491303149929
+"Nucleolus, Noise",VCG_budget_balanced,-0.7046849585314021
+"Nucleolus, Noise",gately_full,-1.1531995328438711
+"Nucleolus, Noise",gately_hourly,-0.66272729261118
+"Nucleolus, Noise",full_cost,-0.09892298396903243
+"Nucleolus, Noise",nucleolus,-1.4056917913630969
+"Nucleolus, Scenario",shapley,8.169715196406344
+"Nucleolus, Scenario",VCG,-5.824794975616555
+"Nucleolus, Scenario",VCG_budget_balanced,-0.2703457041860702
+"Nucleolus, Scenario",gately_full,-0.4656636285932336
+"Nucleolus, Scenario",gately_hourly,-0.24142800694585276
+"Nucleolus, Scenario",full_cost,1.1368683772161603e-13
+"Nucleolus, Scenario",nucleolus,-0.18874024062040462

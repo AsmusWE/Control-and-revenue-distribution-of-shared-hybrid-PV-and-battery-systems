@@ -7,7 +7,6 @@ using Combinatorics, NLsolve, HiGHS, JuMP#, Gurobi
 function calculate_allocations(
     allocations, clients, coalitions, imbalances, hourly_imbalances, systemData; printing = true
     )
-    # Refactored: Use a mapping for allocation types to their calculation logic
     allocation_costs = Dict{String, Any}()
     allocation_map = Dict(
         "shapley" => () -> shapley_value(clients, coalitions, imbalances),
@@ -21,7 +20,8 @@ function calculate_allocations(
         "nucleolus" => () -> begin
             _, nucleolus_values = nucleolus(clients, imbalances)
             deepcopy(nucleolus_values)
-        end
+        end,
+        "equal_share" => () -> deepcopy(equal_allocation(clients, imbalances))
     )
     allocation_print_map = Dict(
         "shapley" => "Shapley calculation time:",
@@ -32,7 +32,8 @@ function calculate_allocations(
         "gately_hourly" => "Gately calculation time, hourly:",
         "full_cost" => "Full cost transfer calculation time:",
         "reduced_cost" => "reduced cost calculation time:",
-        "nucleolus" => "Nucleolus calculation time:"
+        "nucleolus" => "Nucleolus calculation time:",
+        "equal_share" => "Equal share calculation time:"
     )
     for allocation in allocations
         if haskey(allocation_map, allocation)
@@ -412,6 +413,15 @@ function nucleolus_optimize(clients, imbalances_vec, locked_excesses_vec, coalit
     if termination_status(model) == MOI.OPTIMAL
         dual_values = dual.(excess_cons)
         new_locked_excesses = Dict{Int, Float64}()
+        # Finding max excess(es)
+        excess_values = [value(sum(payment[i] for i in coalition_indices[c]) - imbalances_vec[c]) for c in 1:C]
+        max_excess_val = maximum(excess_values)
+        tol = 1e-6
+        for c in 1:C
+            if abs(excess_values[c] - max_excess_val) < tol && c != gc_idx && !(c in locked_indices)
+                new_locked_excesses[c] = max_excess_val
+            end
+        end
         for i in eachindex(dual_values)
             if dual_values[i] < -1e-6
                 new_locked_excesses[i[1]] = objective_value(model)
@@ -438,4 +448,17 @@ function nucleolus_optimize(clients, imbalances_vec, locked_excesses_vec, coalit
             println("All coalitions are locked, the nucleolus has been found")
         end
     end
+end
+
+function equal_allocation(clients, imbalances)
+    # This function calculates an even allocation for each client in the grand coalition
+    # It distributes the grand coalition imbalance cost evenly among all clients according to their imbalance
+    grand_coalition_imbalance = imbalances[clients]
+    total_solo_imbalance = sum(imbalances[[client]] for client in clients)
+    imbalance_factor = grand_coalition_imbalance / total_solo_imbalance
+    equal_allocation = Dict{String, Float64}()
+    for client in clients
+        equal_allocation[client] = imbalances[[client]] * imbalance_factor
+    end
+    return equal_allocation
 end

@@ -40,7 +40,8 @@ function plot_results(
         "gately_hourly" => ("Gately Hourly", :lightgrey),
         "full_cost" => ("Full Cost", :pink),
         "reduced_cost" => ("Reduced Cost", :lightblue),
-        "nucleolus" => ("Nucleolus", :green)
+        "nucleolus" => ("Nucleolus", :green),
+        "equal_share" => ("Equal Share", :purple)
     )
 
     # Cost per MWh
@@ -121,7 +122,7 @@ function plot_results(
     display(p_total_demand)
 end
 
-function plot_all(all_noise::PlotData, all_scen::PlotData, nuc_noise::PlotData, nuc_scen::PlotData)
+function save_rel_imbal(all_noise, all_scen, nuc_noise, nuc_scen)
     plotdata_list = [all_noise, all_scen, nuc_noise, nuc_scen]
     plot_titles = [
         "All, Noise",
@@ -168,7 +169,7 @@ function plot_all(all_noise::PlotData, all_scen::PlotData, nuc_noise::PlotData, 
             end
         end
     end
-    CSV.write("plot_data.csv", all_rows)
+    CSV.write("Results/relative_imbalance_data.csv", all_rows)
     return all_rows
 end
 
@@ -217,10 +218,3 @@ function plot_variance(
     end
     display(p_variance)
 end
-
-plot_data_all_noise = deserialize("plot_data_all_noise.jls")
-plot_data_all_scenarios = deserialize("plot_data_all_scen.jls")
-plot_data_nuc_noise = deserialize("plot_data_nuc_noise.jls")
-plot_data_nuc_scenarios = deserialize("plot_data_nuc_scen.jls")
-
-plot_all(plot_data_all_noise, plot_data_all_scenarios, plot_data_nuc_noise, plot_data_nuc_scenarios)

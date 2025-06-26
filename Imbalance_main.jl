@@ -22,6 +22,7 @@ systemData, clients = load_data()
 # Removing solar park owner "Z" and other clients as needed
 clients = filter(x -> x != "Z", clients)
 clients = filter(x -> !(x in ["W", "N", "V", "J", "O", "T", "Y"]), clients)
+clients = filter(x -> !(x in ["L", "U"]), clients)
 coalitions = collect(combinations(clients))
 
 # We assume that upregulation is more expensive than downregulation
@@ -41,15 +42,16 @@ systemData["demand_forecast"] = "noise"
 systemData["pv_forecast"] = "noise"
 
 allocations = [
-    "shapley",
+    #"shapley",
     "VCG",
-    "VCG_budget_balanced",
-    "gately_full",
+    #"VCG_budget_balanced",
+    #"gately_full",
     #"gately_daily",
-    "gately_hourly",
-    "full_cost",
+    #"gately_hourly",
+    #"full_cost",
     #"reduced_cost",
-    #"nucleolus"
+    #"nucleolus",
+    #"equal_share"
 ]
 
 # =========================
@@ -72,13 +74,13 @@ grand_coalition = clients
 grand_coalition_imbalance = imbalances[grand_coalition]
 
 individual_imbalance_sum = sum(imbalances[[client]] for client in clients)
+VCG_cost = sum(values(allocation_costs["VCG"]))
 
 println("Grand coalition imbalance: ", grand_coalition_imbalance)
 println("Sum of individual client imbalances: ", individual_imbalance_sum)
 println("Difference: ", grand_coalition_imbalance - individual_imbalance_sum)
-
-# Calculating average relative imbalance cost
-relative_imbalance_cost = grand_coalition_imbalance / individual_imbalance_sum
+println("VCG cost: ", VCG_cost)
+println("VCG subsidies: ", grand_coalition_imbalance - VCG_cost)
 
 # Define a struct to hold all relevant plotting data
 struct PlotData
@@ -103,8 +105,8 @@ plot_data = PlotData(
     sim_days,
     daily_cost_MWh_imbalance
 )
-# Save plot_data to a local file
-serialize("plot_data_temp.jls", plot_data)
+# Save plot_data to the "Results" subfolder
+serialize("Results/plot_data_temp.jls", plot_data)
 
 # Use the struct for plotting
 plot_results(
@@ -128,8 +130,6 @@ plot_results(
 #    plot_data.sim_days;
 #    outliers = false
 #)
-
-
 
 
 

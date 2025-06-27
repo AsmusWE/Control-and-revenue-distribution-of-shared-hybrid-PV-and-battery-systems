@@ -53,7 +53,7 @@ function allocation_variance(
     allocations::Vector{String}, 
     clients::Vector{String}, 
     coalitions::Vector{Vector{String}}, 
-    systemData::Dict, 
+    systemData, 
     start_hour, 
     sim_days::Int
 )

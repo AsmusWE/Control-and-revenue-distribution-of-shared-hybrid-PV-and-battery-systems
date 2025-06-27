@@ -42,16 +42,16 @@ systemData["demand_forecast"] = "noise"
 systemData["pv_forecast"] = "noise"
 
 allocations = [
-    #"shapley",
+    "shapley",
     "VCG",
-    #"VCG_budget_balanced",
-    #"gately_full",
+    "VCG_budget_balanced",
+    "gately_full",
     #"gately_daily",
-    #"gately_hourly",
-    #"full_cost",
+    "gately_hourly",
+    "full_cost",
     #"reduced_cost",
-    #"nucleolus",
-    #"equal_share"
+    "nucleolus",
+    "equal_share"
 ]
 
 # =========================

@@ -61,18 +61,15 @@ function load_data()
     # --- Change to 15 minute resolution ---
     # Expand each row to 4 rows (15-minute intervals), dividing values by 4
     value_cols = names(combinedData, Not(:HourUTC_datetime))
-    new_rows = DataFrame()
-    for row in eachrow(combinedData)
-        for i in 0:3
-            new_row = deepcopy(row)
-            new_row[:HourUTC_datetime] += Minute(15 * i)
-            for col in value_cols
-                new_row[col] /= 4
-            end
-            push!(new_rows, new_row)
-        end
-    end
-    combinedData = new_rows
+    N = nrow(combinedData)
+    repeats = 4
+    # Repeat each row 4 times
+    expanded = combinedData[repeat(1:N, inner=repeats), :]
+    # Add 15-min offset to each repeated row
+    expanded.:HourUTC_datetime .+= Minute.(15 .* repeat(0:3, outer=N))
+    # Divide value columns by 4
+    expanded[:, value_cols] .= expanded[:, value_cols] ./ 4
+    combinedData = expanded
     sort!(combinedData, :HourUTC_datetime)
 
     # --- Collect system data ---

@@ -16,15 +16,10 @@ function load_data()
     demand[!, :Z] .= 0
 
     # --- Define PV ownership ---
+    pvOwnershipDF = CSV.read("Data/Asset_master_data_asmus.csv", DataFrame; decimal=',')
+    clientPVOwnership = Dict(String(row.Customer) => row.a_ppa_pct for row in eachrow(pvOwnershipDF))
     # Note: Z is the solar park owner
-    clientPVOwnership = Dict(
-        "A" => 0.143, "B" => 0.006, "C" => 0.009, "D" => 0.007, "E" => 0.005, 
-        "F" => 0.003, "G" => 0.143, "H" => 0.014, "I" => 0.05, "J" => 0.003, 
-        "K" => 0.004, "L" => 0.021, "M" => 0.004, "N" => 0.001, "O" => 0.003, 
-        "P" => 0.003, "Q" => 0.028, "R" => 0.002, "S" => 0.041, "T" => 0.002, 
-        "U" => 0.007, "V" => 0.002, "W" => 0.001, "X" => 0.001, "Y" => 0.01,
-        "Z" => 0.487
-    )
+    clientPVOwnership["Z"] = 1-sum(values(clientPVOwnership)) 
 
     # --- Load and rescale PV production ---
     pvProduction = CSV.read("Data/ProductionMunicipalityHour.csv", DataFrame; decimal=',')

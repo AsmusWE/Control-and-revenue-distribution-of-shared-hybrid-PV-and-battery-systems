@@ -31,9 +31,9 @@ function load_data()
     pvProduction = select(pvProduction, [:HourUTC_datetime, :SolarMWh])
 
     # --- Load price data ---
-    priceData = CSV.read("Data/Elspotprices.csv", DataFrame; decimal=',')
-    priceData[!, :HourUTC_datetime] = DateTime.(priceData[:, :HourUTC], DateFormat("yyyy-mm-dd HH:MM:SS"))
-    priceData = select(priceData, [:HourUTC_datetime, :SpotPriceDKK])
+    #priceData = CSV.read("Data/Elspotprices.csv", DataFrame; decimal=',')
+    #priceData[!, :HourUTC_datetime] = DateTime.(priceData[:, :HourUTC], DateFormat("yyyy-mm-dd HH:MM:SS"))
+    #priceData = select(priceData, [:HourUTC_datetime, :SpotPriceDKK])
 
     # --- Combine demand and PV production ---
     combinedData = innerjoin(pvProduction, demand, on=:HourUTC_datetime)
@@ -58,9 +58,9 @@ function load_data()
 
     # --- Collect system data ---
     systemData = Dict(
-        "demand" => demand,
+        #"demand" => demand,
         "clientPVOwnership" => clientPVOwnership,
-        "clients" => clients,
+        #"clients" => clients,
         "price_prod_demand_df" => combinedData
     )
     return systemData, clients_without_missing_data

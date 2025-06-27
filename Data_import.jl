@@ -31,8 +31,8 @@ function load_data()
     pvProduction = select(pvProduction, [:HourUTC_datetime, :SolarMWh])
 
     # --- Load imbalance price data ---
-    ImbPriceData = CSV.read("Data/imbalance_prices.csv", DataFrame; decimal=',')
-    ImbPriceData[!, :HourUTC_datetime] = DateTime.(ImbPriceData[:, :HourUTC], DateFormat("yyyy-mm-dd HH:MM:SS"))
+    #ImbPriceData = CSV.read("Data/ImbalancePrice.csv", DataFrame; decimal=',')
+    #ImbPriceData[!, :HourUTC_datetime] = DateTime.(ImbPriceData[:, :HourUTC], DateFormat("yyyy-mm-dd HH:MM:SS"))
 
     # --- Combine demand and PV production ---
     combinedData = innerjoin(pvProduction, demand, on=:HourUTC_datetime)
@@ -55,11 +55,31 @@ function load_data()
     missing_data_counts = Dict(client => count(ismissing, demand[:, client]) for client in clients)
     clients_without_missing_data = filter(client -> missing_data_counts[client] == 0, clients)
 
+    # --- Filter combined data to include only clients without missing data ---
+    combinedData = select(combinedData, Cols(:HourUTC_datetime, :SolarMWh, clients_without_missing_data..., :PVForecast))
+
+    # --- Change to 15 minute resolution ---
+    # Expand each row to 4 rows (15-minute intervals), dividing values by 4
+    value_cols = names(combinedData, Not(:HourUTC_datetime))
+    new_rows = DataFrame()
+    for row in eachrow(combinedData)
+        for i in 0:3
+            new_row = deepcopy(row)
+            new_row[:HourUTC_datetime] += Minute(15 * i)
+            for col in value_cols
+                new_row[col] /= 4
+            end
+            push!(new_rows, new_row)
+        end
+    end
+    combinedData = new_rows
+    sort!(combinedData, :HourUTC_datetime)
+
     # --- Collect system data ---
     systemData = Dict(
-        "demand" => demand,
+        #"demand" => demand,
         "clientPVOwnership" => clientPVOwnership,
-        "clients" => clients,
+        #"clients" => clients,
         "price_prod_demand_df" => combinedData
     )
     return systemData, clients_without_missing_data

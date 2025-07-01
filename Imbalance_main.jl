@@ -22,7 +22,7 @@ systemData, clients = load_data()
 # Removing solar park owner "Z" and other clients as needed
 clients = filter(x -> x != "Z", clients)
 clients = filter(x -> !(x in ["W", "N", "V", "J", "O", "T", "Y"]), clients)
-clients = filter(x -> !(x in ["L", "U"]), clients)
+#clients = filter(x -> !(x in ["L", "U"]), clients)
 coalitions = collect(combinations(clients))
 
 # We assume that upregulation is more expensive than downregulation
@@ -45,9 +45,9 @@ allocations = [
     "shapley",
     "VCG",
     "VCG_budget_balanced",
-    "gately_full",
+    "gately_daily",
     #"gately_daily",
-    "gately_hourly",
+    "gately_interval",
     "full_cost",
     #"reduced_cost",
     "nucleolus",
@@ -106,7 +106,7 @@ plot_data = PlotData(
     daily_cost_MWh_imbalance
 )
 # Save plot_data to the "Results" subfolder
-serialize("Results/plot_data_temp.jls", plot_data)
+serialize("Results/nucleolus_noise.jls", plot_data)
 
 # Use the struct for plotting
 plot_results(
@@ -119,17 +119,16 @@ plot_results(
     plot_data.sim_days
 )
 
-#plot_client = "N"
-
-#plot_variance(
-#    plot_data.allocations,
-#    plot_data.allocation_costs,
-#    plot_data.daily_cost_MWh_imbalance,
-#    plot_data.imbalances,
-#    plot_client,
-#    plot_data.sim_days;
-#    outliers = false
-#)
+plot_client = "U"
+plot_variance(
+    plot_data.allocations,
+    plot_data.allocation_costs,
+    plot_data.daily_cost_MWh_imbalance,
+    plot_data.imbalances,
+    plot_client,
+    plot_data.sim_days;
+    outliers = false
+)
 
 
 

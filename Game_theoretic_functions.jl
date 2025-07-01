@@ -12,9 +12,9 @@ function calculate_allocations(
         "shapley" => () -> shapley_value(clients, coalitions, imbalances),
         "VCG" => () -> VCG_tax(clients, imbalances, hourly_imbalances, systemData; budget_balance=false),
         "VCG_budget_balanced" => () -> VCG_tax(clients, imbalances, hourly_imbalances, systemData; budget_balance=true),
-        "gately_full" => () -> deepcopy(gately_point(clients, imbalances)),
-        "gately_daily" => () -> deepcopy(gately_point_daily(clients, hourly_imbalances, systemData)),
-        "gately_hourly" => () -> deepcopy(gately_point_hourly(clients, hourly_imbalances, systemData)),
+        "gately_daily" => () -> deepcopy(gately_point(clients, imbalances)),
+        #"gately_daily" => () -> deepcopy(gately_point_daily(clients, hourly_imbalances, systemData)),
+        "gately_interval" => () -> deepcopy(gately_point_interval(clients, hourly_imbalances, systemData)),
         "full_cost" => () -> deepcopy(full_cost_transfer(clients, hourly_imbalances, systemData)),
         "reduced_cost" => () -> deepcopy(reduced_cost(clients, hourly_imbalances, systemData)),
         "nucleolus" => () -> begin
@@ -27,9 +27,9 @@ function calculate_allocations(
         "shapley" => "Shapley calculation time:",
         "VCG" => "VCG calculation time:",
         "VCG_budget_balanced" => "VCG budget balanced calculation time:",
-        "gately_full" => "Gately calculation time, full period:",
         "gately_daily" => "Gately calculation time, daily:",
-        "gately_hourly" => "Gately calculation time, hourly:",
+        #"gately_daily" => "Gately calculation time, daily:",
+        "gately_interval" => "Gately calculation time, interval:",
         "full_cost" => "Full cost transfer calculation time:",
         "reduced_cost" => "reduced cost calculation time:",
         "nucleolus" => "Nucleolus calculation time:",
@@ -251,19 +251,19 @@ function gately_point(clients, imbalance_costs)
     return gately_distribution
 end
 
-function gately_point_hourly(clients, hourly_imbalances, systemData)
+function gately_point_interval(clients, interval_imbalances, systemData)
     # This function applies the Gately point calculation for each interval (15-min)
     upreg_price = systemData["upreg_price"]
     downreg_price = systemData["downreg_price"]
     coalitions = collect(combinations(clients))
-    T = length(hourly_imbalances[[clients[1]]])
+    T = length(interval_imbalances[[clients[1]]])
     gately_distribution = Dict(client => 0.0 for client in clients)
 
     for t in 1:T
         # Build imbalance_costs for the current interval
         imbalance_costs = Dict{Vector{String}, Float64}()
         for coalition in coalitions
-            temp_cost = sum(hourly_imbalances[[c]][t] for c in coalition)
+            temp_cost = sum(interval_imbalances[[c]][t] for c in coalition)
             if temp_cost < 0
                 imbalance_costs[coalition] = abs(temp_cost) * upreg_price
             else
@@ -271,13 +271,13 @@ function gately_point_hourly(clients, hourly_imbalances, systemData)
             end
         end
         # Calculate Gately point for the current interval and add to the distribution
-        gately_hour = gately_point(clients, imbalance_costs)
+        gately_interval = gately_point(clients, imbalance_costs)
         # Check for NaN values in the Gately distribution for the current interval
-        if any(isnan, values(gately_hour))
+        if any(isnan, values(gately_interval))
             println("Warning: NaN detected in Gately distribution for interval $t.")
         end
         for client in clients
-            gately_distribution[client] += gately_hour[client]
+            gately_distribution[client] += gately_interval[client]
         end
     end
     return gately_distribution

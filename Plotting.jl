@@ -14,19 +14,19 @@ function plot_results(
     systemData,
     allocation_costs,
     #bids,
-    imbalances,
-    clients_without_missing_data,
+    coalitionCVaR,
+    clients,
     start_hour,
     sim_days
 )
-    # Calculating cost per imbalance cost per MWh
+    # Cutting data to the specified start hour and sim_days
     start_idx = findfirst(x -> x >= start_hour, systemData["price_prod_demand_df"][!,"HourUTC_datetime"])
-    end_idx = start_idx + sim_days * 24 - 1
+    end_idx = start_idx + sim_days * 24*4 - 1
     dayData = deepcopy(systemData)
     dayData["price_prod_demand_df"] = systemData["price_prod_demand_df"][start_idx:end_idx, :]
 
     # Rank clients by average demand
-    avg_demands = Dict(client => sum(dayData["price_prod_demand_df"][!, Symbol(client)]) / length(dayData["price_prod_demand_df"][!, Symbol(client)]) for client in clients_without_missing_data)
+    avg_demands = Dict(client => sum(dayData["price_prod_demand_df"][!, Symbol(client)]) / length(dayData["price_prod_demand_df"][!, Symbol(client)]) for client in clients)
     sorted_clients = sort(collect(avg_demands), by = x -> -x[2])
     plotKeys = [client for (client, _) in sorted_clients]
 
@@ -35,7 +35,7 @@ function plot_results(
         "shapley" => ("Shapley", :red),
         "VCG" => ("VCG", :yellow),
         "VCG_budget_balanced" => ("VCG Budget Balanced", :orange),
-        "gately_daily" => ("Gately Daily", :grey),
+        "gately" => ("Gately Point", :grey),
         #"gately_daily" => ("Gately Daily", :black),
         "gately_interval" => ("Gately 15Min interval", :lightgrey),
         "full_cost" => ("Full Cost", :pink),
@@ -44,14 +44,14 @@ function plot_results(
         "equal_share" => ("Equal Share", :purple)
     )
 
-    # Cost per MWh
+    # CVaR per MWh
     cost_MWh = Dict()
     for alloc in allocations
         if haskey(allocation_costs, alloc)
-            cost_MWh[alloc] = scale_distribution!(allocation_costs[alloc], dayData["price_prod_demand_df"], clients_without_missing_data)
+            cost_MWh[alloc] = scale_distribution!(allocation_costs[alloc], dayData["price_prod_demand_df"], clients)
         end
     end
-    p_fees_MWh = plot(title="Imbalance per MWh demand", xlabel="Client", ylabel="Imbalance per MWh", xticks=(1:length(plotKeys), plotKeys), xrotation=45)
+    p_fees_MWh = plot(title="CVaR per MWh demand", xlabel="Client", ylabel="CVaR/MWh [(€/15min)/MWh]", xticks=(1:length(plotKeys), plotKeys), xrotation=45)
     for alloc in allocations
         if haskey(cost_MWh, alloc)
             label, color = allocation_labels[alloc]
@@ -61,8 +61,8 @@ function plot_results(
     end
     display(p_fees_MWh)
 
-    # Total fees
-    p_fees_total = plot(title="Total Imbalance", xlabel="Client", ylabel="Total Imbalance", xticks=(1:length(plotKeys), plotKeys), xrotation=45)
+    # Total CVaR
+    p_fees_total = plot(title="CVaR contribution [€/15min]", xlabel="Client", ylabel="Total CVaR", xticks=(1:length(plotKeys), plotKeys), xrotation=45)
     for alloc in allocations
         if haskey(allocation_costs, alloc)
             label, color = allocation_labels[alloc]
@@ -72,34 +72,37 @@ function plot_results(
     end
     display(p_fees_total)
 
-    # Cost per MWh imbalance
-    cost_imbalance = Dict{String, Dict{String, Float64}}()
+    # CVaR contribution vs individual CVaR
+    CVaRRatio = Dict{String, Dict{String, Float64}}()
     for alloc in allocations
         if haskey(allocation_costs, alloc)
-            cost_imbalance[alloc] = Dict{String, Float64}()
+            CVaRRatio[alloc] = Dict{String, Float64}()
             for client in plotKeys
-                cost_imbalance[alloc][client] = allocation_costs[alloc][client] / imbalances[[client]]
+                CVaRRatio[alloc][client] = allocation_costs[alloc][client] / coalitionCVaR[[client]]
+                # Convert to percentage
+                CVaRRatio[alloc][client] = CVaRRatio[alloc][client] * 100
             end
         end
     end
-    min_val = minimum([cost_imbalance[alloc][k] for alloc in allocations if haskey(cost_imbalance, alloc) for k in plotKeys])
-    lower_ylim = min(0.0, min_val - 0.05)  # Add a small margin below min_val, but not above 0
-    p_imbalance_cost = plot(
-        title="Imbalance compared to no cooperation",
+
+    #min_val = minimum([cost_imbalance[alloc][k] for alloc in allocations if haskey(cost_imbalance, alloc) for k in plotKeys])
+    #lower_ylim = min(0.0, min_val - 0.05)  # Add a small margin below min_val, but not above 0
+    p_CVaRRatio = plot(
+        title="CVaR contribution vs individual CVaR",
         xlabel="Client",
-        ylabel="Imbalance factor as part of grand coalition",
+        ylabel="CVaR Contribution / Individual CVaR [%]",
         xticks=(1:length(plotKeys), plotKeys),
         xrotation=45,
-        ylim=(-0.25, 1)
+        #ylim=(0, 100)
     )
     for alloc in allocations
-        if haskey(cost_imbalance, alloc)
+        if haskey(CVaRRatio, alloc)
             label, color = allocation_labels[alloc]
-            plotVals = [cost_imbalance[alloc][k] for k in plotKeys]
-            scatter!(p_imbalance_cost, 1:length(plotKeys), plotVals, label=label, color=color)
+            plotVals = [CVaRRatio[alloc][k] for k in plotKeys]
+            scatter!(p_CVaRRatio, 1:length(plotKeys), plotVals, label=label, color=color)
         end
     end
-    display(p_imbalance_cost)
+    display(p_CVaRRatio)
 
     # Plot aggregate demand, PV production, bids, and imbalance
     #p_aggregate = plot(title="Aggregate Demand, PV Production, Bids, and Imbalance", xlabel="Hour", ylabel="Value")

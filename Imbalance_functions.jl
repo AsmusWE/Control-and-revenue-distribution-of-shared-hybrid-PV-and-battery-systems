@@ -18,16 +18,39 @@ function optimize_imbalance(coalition, systemData)
     TimeHorizon = length(systemData["price_prod_demand_df"][!, "HourUTC_datetime"]) # Total number of 15-min intervals in the dataset
     first_hour = systemData["price_prod_demand_df"][1, "HourUTC_datetime"]
     weekday = dayofweek(first_hour)  # 1=Monday, 7=Sunday
-    
     if systemData["demand_forecast"] == "perfect"
         # Demand forecast is perfect, use actual demand data
         demand = sum(systemData["price_prod_demand_df"][1:TimeHorizon, client] for client in coalition)
     elseif systemData["demand_forecast"] == "scenarios"
-        # Demand forecast is not perfect, use forecast data
-        demand = sum(systemData["demand_scenarios"][c,weekday] for c in coalition)
+        # Demand forecast is not perfect, use scenario data
+        #demand = sum(systemData["demand_scenarios"][c,weekday] for c in coalition)
+        # Demand forecast is not perfect, use scenario data
+        intervals_per_day = 96
+        days = ceil(Int, TimeHorizon / intervals_per_day)
+        
+        # Initialize demand array
+        demand = zeros(TimeHorizon, size(systemData["demand_scenarios"][coalition[1], 1], 2))
+        
+        for day in 1:days
+            # Calculate which weekday this is 
+            # Converts to 0 indexing, and then back to 1 indexing
+            current_weekday = mod(weekday -1 + day - 1, 7) + 1
+            
+            # Calculate interval range for this day
+            start_interval = (day - 1) * intervals_per_day + 1
+            end_interval = min(day * intervals_per_day, TimeHorizon)
+            actual_intervals = end_interval - start_interval + 1
+            
+            # Sum demand scenarios for all clients in coalition for this weekday
+            day_demand = sum(systemData["demand_scenarios"][c, current_weekday] for c in coalition)
+            
+            # Fill the demand array for this day (handle partial days)
+            demand[start_interval:end_interval, :] = day_demand[1:actual_intervals, :]
+        end
     elseif systemData["demand_forecast"] == "noise"
         # Forecast is set as the actual demand with added noise
-        demand = sum(systemData["price_prod_demand_df"][1:TimeHorizon, client] for client in coalition) .* (1 .+ 0.1*randn(TimeHorizon, 1))
+        standard_deviation = systemData["demand_noise_std"]
+        demand = sum(systemData["price_prod_demand_df"][1:TimeHorizon, client] for client in coalition) .* (1 .+ standard_deviation*randn(TimeHorizon, 1))
     else
         error("Unknown demand forecast type: $(systemData["demand_forecast"])")
     end
@@ -44,7 +67,8 @@ function optimize_imbalance(coalition, systemData)
         pvProduction = systemData["price_prod_demand_df"][1:T, :PVForecast]
     elseif systemData["pv_forecast"] == "noise"
         # Forecast is set as the actual PV production with added noise
-        pvProduction = systemData["price_prod_demand_df"][1:T, :SolarMWh] .* (1 .+ 0.1 * randn(T, 1))
+        standard_deviation = systemData["pv_noise_std"]
+        pvProduction = systemData["price_prod_demand_df"][1:T, :SolarMWh] .* (1 .+ standard_deviation * randn(T, 1))
     else
         error("Unknown PV forecast type: $(systemData["pv_forecast"])")
     end
@@ -73,7 +97,7 @@ function optimize_imbalance(coalition, systemData)
     if termination_status(model) == MOI.OPTIMAL
         #println("Optimal solution found")
         #println("Objective value: ", objective_value(model))
-        return value.(bid)
+        return value.(bid), demand, prod
     else
         println("No optimal solution found")
     end
@@ -100,7 +124,7 @@ end
 function calculate_imbalance(systemData, clients)
     coalitions = collect(combinations(clients))
     n_coalitions = length(coalitions)
-    bids_dict = calculate_bids(coalitions, systemData)
+    bids_dict, demandForecast, pvForecast = calculate_bids(coalitions, systemData)
     demand_sum_vec = Vector{Vector{Float64}}(undef, n_coalitions)
     scaled_pvProd_vec = Vector{Vector{Float64}}(undef, n_coalitions)
     for (i, coalition) in enumerate(coalitions)
@@ -108,24 +132,28 @@ function calculate_imbalance(systemData, clients)
         scaled_pvProd_vec[i] = systemData["price_prod_demand_df"][!, "SolarMWh"] .* sum(systemData["clientPVOwnership"][c] for c in coalition)
     end
     results = [CoalitionResults(demand_sum_vec[i], scaled_pvProd_vec[i], bids_dict[coalitions[i]]) for i in 1:n_coalitions]
-    return results
+    return results, demandForecast, pvForecast
 end
 
 function calculate_bids(coalitions, systemData)
     # This function calculates the bids for each coalition combination
     bids = Dict()
+    demandForecastDict = Dict()
+    pvForecastDict = Dict()
 
     # Instead of explicitly calculating each coalition's bids, we can combine the individual bids
     # Calculate bids for each single client
     for client in filter(c -> length(c) == 1, coalitions)
-        bids[client] = optimize_imbalance(client, systemData)
+        bids[client], demandForecastDict[client], pvForecastDict[client] = optimize_imbalance(client, systemData)
     end
+    demandForecast = sum(values(demandForecastDict))  # Sum the demand forecasts for all clients
+    pvForecast = sum(values(pvForecastDict))  # Sum the PV forecasts for all
 
     # Calculate bids for each coalition by summing the bids of its members
     for coalition in coalitions
         bids[coalition] = sum(bids[[client]] for client in coalition)
     end
-    return bids
+    return bids, demandForecast, pvForecast
 end
 
 function period_imbalance(systemData, clients, startDay, days; printing=true)
@@ -165,6 +193,80 @@ function calculate_CVaR(systemData, clients, startDay, days; alpha=0.05, threads
     # The CVaR is the highest values, not the worst, as this is a cost minimization problem
     
     #coalitions,period_interval_imbalance  = period_imbalance(systemData, clients, startDay, days)
+    tempData = set_period!(systemData, startDay, days)
+    coalitions = collect(combinations(clients))
+    # Calculating the imbalances
+    results, demandForecast, pvForecast = calculate_imbalance(tempData, clients)
+    imbalances = zeros(length(coalitions), length(pvForecast)) # Initialize the imbalance matrix
+    for (i, res) in enumerate(results)
+        # Calculate hourly imbalance for this coalition
+        interval_imbalance = get_imbalance(res.bids, res.scaled_pvProd, res.demand_sum)
+        imbalances[i, :] = interval_imbalance
+    end
+    
+    imbalance_spread = tempData["price_prod_demand_df"][!, "ImbalanceSpreadEUR"]  # Get the imbalance spread from the DataFrame
+    # Calculate the CVaR for each coalition
+    cvar_array = zeros(length(coalitions))
+    for (i, coalition) in enumerate(coalitions)
+        imbalance_costs = imbalances[i, :] .* imbalance_spread  # Find the cost of the imbalances for this coalition
+        sorted_imbalance_costs = sort(imbalance_costs, rev=true)  # Sort in descending order (highest first)
+        n = length(sorted_imbalance_costs)
+        index = ceil(Int, n * alpha)  # Index for CVaR
+        cvar_value = mean(sorted_imbalance_costs[1:index])  # Average of the highest alpha% of imbalances
+        cvar_array[i] = cvar_value
+    end
+    # Convert the CVaR array to a dictionary for easier access
+    cvar_dict = Dict{Any, Float64}()
+    for (i, coalition) in enumerate(coalitions)
+        cvar_dict[coalition] = cvar_array[i]
+    end
+
+    # Convert imbalances to a dictionary for easier access
+    imbalanceDict = Dict{Any, Vector{Float64}}()
+    for (i, coalition) in enumerate(coalitions)
+        imbalanceDict[coalition] = imbalances[i, :]
+    end
+
+    return cvar_dict, imbalanceDict, demandForecast, pvForecast
+end
+
+function calculate_MAE(systemData, demandForecast, pvForecast, clients, start_interval, days)
+    # Calculate the Mean Absolute Error (MAE) of the demand forecast
+    totalDemand = 0
+    tempData = set_period!(systemData, start_interval, days)
+    totalDemandInterval = zeros(size(tempData["price_prod_demand_df"], 1))
+    demandForecastType = tempData["demand_forecast"]
+    for client in clients
+        # Get the demand for the client
+        totalDemand += sum(tempData["price_prod_demand_df"][!, client])
+        totalDemandInterval += sum(tempData["price_prod_demand_df"][!, client], dims=2)
+    end
+    absDemandError = 0
+    if demandForecastType == "scenarios"
+        # Set the forecast as the median of the scenarios
+        absDemandError = sum(abs.(median(demandForecast, dims=2) .- totalDemandInterval))
+    else
+        absDemandError = sum(abs.(demandForecast .- totalDemandInterval))
+    end
+    println("Total demand: ", totalDemand)
+    println("Total demand interval: ", sum(totalDemandInterval))
+    println("Absolute demand error: ", absDemandError)
+    MAE_Demand = absDemandError / totalDemand
+
+    # Calculate the Mean Absolute Error (MAE) of the PV forecast
+    # PV production is scaled according to client PV ownership
+    clientPVOwnership = sum(tempData["clientPVOwnership"][c] for c in clients)
+    totalPV = sum(tempData["price_prod_demand_df"][!, "SolarMWh"])
+    totalPV = totalPV .* clientPVOwnership  # Scale by total PV ownership
+    totalPVInterval = sum(tempData["price_prod_demand_df"][!, "SolarMWh"], dims=2)
+    totalPVInterval = totalPVInterval .* clientPVOwnership  # Scale by total PV ownership
+    # PV forecast is always deterministic
+    absPVError = sum(abs.(pvForecast .- totalPVInterval))
+    MAE_PV = absPVError / totalPV
+    return MAE_Demand, MAE_PV
+end
+
+function set_period!(systemData, startDay, days)
     start_interval = findfirst(x -> x >= startDay, systemData["price_prod_demand_df"][!,"HourUTC_datetime"])
     intervals_per_day = 96 # 15-min intervals per day
     intervals = days * intervals_per_day
@@ -179,33 +281,5 @@ function calculate_CVaR(systemData, clients, startDay, days; alpha=0.05, threads
             rethrow(e)
         end
     end
-    coalitions = collect(combinations(clients))
-    # Calculating the imbalances
-    results = calculate_imbalance(tempData, clients)
-    period_interval_imbalance = zeros(length(coalitions), intervals) # Initialize the imbalance matrix
-    for (i, res) in enumerate(results)
-        # Calculate hourly imbalance for this coalition
-        hourly_imbalance = get_imbalance(res.bids, res.scaled_pvProd, res.demand_sum)
-        period_interval_imbalance[i, :] = hourly_imbalance
-    end
-    
-    imbalance_spread = tempData["price_prod_demand_df"][!, "ImbalanceSpreadEUR"]  # Get the imbalance spread from the DataFrame
-    # Calculate the CVaR for each coalition
-    cvar_array = zeros(length(coalitions))
-    for (i, coalition) in enumerate(coalitions)
-        imbalances = period_interval_imbalance[i, :] .* imbalance_spread  # Find the cost of the imbalances for this coalition
-        sorted_imbalances = sort(imbalances, rev=true)  # Sort in descending order (highest first)
-        n = length(sorted_imbalances)
-        index = ceil(Int, n * alpha)  # Index for CVaR
-        cvar_value = mean(sorted_imbalances[1:index])  # Average of the highest alpha% of imbalances
-        cvar_array[i] = cvar_value
-    end
-    # Convert the CVaR array to a dictionary for easier access
-    cvar_dict = Dict{Any, Float64}()
-    for (i, coalition) in enumerate(coalitions)
-        cvar_dict[coalition] = cvar_array[i]
-    end
-    return cvar_dict
+    return tempData
 end
-
-

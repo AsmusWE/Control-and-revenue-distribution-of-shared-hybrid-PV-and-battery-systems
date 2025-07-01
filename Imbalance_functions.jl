@@ -67,8 +67,9 @@ function optimize_imbalance(coalition, systemData)
         pvProduction = systemData["price_prod_demand_df"][1:T, :PVForecast]
     elseif systemData["pv_forecast"] == "noise"
         # Forecast is set as the actual PV production with added noise
-        standard_deviation = systemData["pv_noise_std"]
-        pvProduction = systemData["price_prod_demand_df"][1:T, :SolarMWh] .* (1 .+ standard_deviation * randn(T, 1))
+        #standard_deviation = systemData["pv_noise_std"]
+        #pvProduction = systemData["price_prod_demand_df"][1:T, :SolarMWh] .* (1 .+ standard_deviation * randn(T, 1))
+        pvProduction = systemData["pv_forecast_noise"][1:T] # Use the noise forecast directly
     else
         error("Unknown PV forecast type: $(systemData["pv_forecast"])")
     end

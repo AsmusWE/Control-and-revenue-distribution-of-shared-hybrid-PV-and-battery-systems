@@ -1,4 +1,6 @@
-function generate_scenarios(clients, demandDF, start_hour; num_scenarios = 100, scen_length = 96)
+include("Imbalance_functions.jl")
+
+function generate_scenarios_demand(clients, demandDF, start_hour; num_scenarios = 50, scen_length = 96)
     # Find the index of the first value after the start_hour in the demandDF
     start_idx = findfirst(demandDF[:, :HourUTC_datetime] .> start_hour)
     if start_idx === nothing
@@ -41,4 +43,14 @@ function generate_scenarios(clients, demandDF, start_hour; num_scenarios = 100, 
     end
 
     return scenarios_dict
+end
+
+
+function generate_noise_forecast_PV(clients, systemData, start_hour, sim_days)
+    standard_deviation = systemData["pv_noise_std"]
+    # Get the number of time steps in the forecast
+    tempData = set_period!(systemData, start_hour, sim_days)
+    data_length = size(tempData["price_prod_demand_df"], 1)
+    pvForecast = tempData["price_prod_demand_df"][:, :SolarMWh] .* (1 .+ standard_deviation * randn(data_length, 1))
+    return pvForecast
 end

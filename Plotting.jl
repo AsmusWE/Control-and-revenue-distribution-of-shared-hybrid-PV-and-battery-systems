@@ -93,7 +93,7 @@ function plot_results(
         ylabel="CVaR Contribution / Individual CVaR [%]",
         xticks=(1:length(plotKeys), plotKeys),
         xrotation=45,
-        #ylim=(0, 100)
+        ylim=(0, 100)
     )
     for alloc in allocations
         if haskey(CVaRRatio, alloc)

@@ -20,25 +20,28 @@ Random.seed!(1) # Set seed for reproducibility
 # =========================
 systemData, clients = load_data()
 clients = filter(x -> x != "G", clients)
-clients = filter(x -> !(x in ["W", "N", "V", "J", "O", "T"]), clients)
+#clients = filter(x -> !(x in ["W", "N", "V", "J", "O", "T"]), clients)
 #clients = filter(x -> !(x in ["L", "U"]), clients)
 coalitions = collect(combinations(clients))
 
 # First hour 2024-03-04T12:00:00
 # Last hour 2025-04-26T03:45:00
 start_hour = DateTime(2025, 4, 10, 0, 0, 0)
-sim_days = 1
+sim_days = 15
 num_scenarios = 5
-demand_scenarios = generate_scenarios(clients, systemData["price_prod_demand_df"], start_hour; num_scenarios=num_scenarios)
-systemData["demand_scenarios"] = demand_scenarios
+
 
 # Accepted forecast types: "perfect", "scenarios", "noise"
 systemData["demand_forecast"] = "noise"
 systemData["pv_forecast"] = "noise"
 # Set standard deviations for noise
 # Adjusting so demand MAE is 7-10% and PV MAE is 22.5-25%
-systemData["demand_noise_std"] = 0.15
-systemData["pv_noise_std"] = 0.55
+systemData["demand_noise_std"] = 0.17
+systemData["pv_noise_std"] = 0.32
+
+systemData["demand_scenarios"] = generate_scenarios_demand(clients, systemData["price_prod_demand_df"], start_hour; num_scenarios=num_scenarios)
+systemData["pv_forecast_noise"] = generate_noise_forecast_PV(clients, systemData, start_hour, sim_days)
+
 
 allocations = [
     "shapley",
@@ -49,7 +52,7 @@ allocations = [
     #"gately_interval",
     #"full_cost",
     #"reduced_cost",
-    "nucleolus",
+    #"nucleolus",
     #"equal_share"
 ]
 

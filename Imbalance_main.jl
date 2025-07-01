@@ -19,21 +19,15 @@ Random.seed!(1) # Set seed for reproducibility
 # 1. Data Loading & Setup
 # =========================
 systemData, clients = load_data()
-# Removing solar park owner "Z" and other clients as needed
-clients = filter(x -> x != "Z", clients)
 clients = filter(x -> !(x in ["W", "N", "V", "J", "O", "T", "Y"]), clients)
 #clients = filter(x -> !(x in ["L", "U"]), clients)
 coalitions = collect(combinations(clients))
 
-# We assume that upregulation is more expensive than downregulation
-systemData["upreg_price"] = 1
-systemData["downreg_price"] = 1
-
-# First hour 2024-04-16T22:00:00
-# Last hour 2025-04-25T23:00:00
-start_hour = DateTime(2025, 3, 1, 0, 0, 0)
-sim_days = 31
-num_scenarios = 60
+# First hour 2024-03-04T12:00:00
+# Last hour 2025-04-26T03:45:00
+start_hour = DateTime(2025, 4, 10, 0, 0, 0)
+sim_days = 10
+num_scenarios = 5
 demand_scenarios = generate_scenarios(clients, systemData["price_prod_demand_df"], start_hour; num_scenarios=num_scenarios)
 systemData["demand_scenarios"] = demand_scenarios
 
@@ -44,43 +38,51 @@ systemData["pv_forecast"] = "noise"
 allocations = [
     "shapley",
     "VCG",
-    "VCG_budget_balanced",
-    "gately_daily",
+    #"VCG_budget_balanced",
+    "gately",
     #"gately_daily",
-    "gately_interval",
-    "full_cost",
+    #"gately_interval",
+    #"full_cost",
     #"reduced_cost",
     "nucleolus",
-    "equal_share"
+    #"equal_share"
 ]
 
 # =========================
 # 2. Imbalance Calculation and allocation
 # =========================
+# Calculating CVaR
+println("Calculating CVaR for coalitions...")
+coalitionCVaR = @time calculate_CVaR(systemData, clients, start_hour, sim_days; alpha=0.05)
+
 # Calculating allocations
 println("Calculating allocations...")
-daily_cost_MWh_imbalance, allocation_costs, imbalances, hourly_imbalances = @time allocation_variance(allocations, clients, coalitions, systemData, start_hour, sim_days)
+#daily_cost_MWh_imbalance, allocation_costs, imbalances, hourly_imbalances = @time allocation_variance(allocations, clients, coalitions, systemData, start_hour, sim_days)
+allocation_costs = calculate_allocations(
+    allocations, clients, coalitions, coalitionCVaR, 0, systemData; printing = true
+    )
+
 
 # Checking stability
 max_instability = Dict{String, Float64}()
 for alloc in allocations
     println("Checking stability for allocation: ", alloc)
-    max_instability[alloc] = check_stability(allocation_costs[alloc], imbalances, clients)
+    max_instability[alloc] = check_stability(allocation_costs[alloc], coalitionCVaR, clients)
 end
 println("Max instabilities: ", max_instability)
 
-# Compare the sum of individual client imbalances with the grand coalition imbalance
+# Compare the sum of individual client CVaR with the grand coalition CVaR
 grand_coalition = clients
-grand_coalition_imbalance = imbalances[grand_coalition]
+grand_coalition_CVaR = coalitionCVaR[grand_coalition]
 
-individual_imbalance_sum = sum(imbalances[[client]] for client in clients)
-VCG_cost = sum(values(allocation_costs["VCG"]))
+individual_CVaR_sum = sum(coalitionCVaR[[client]] for client in clients)
+#VCG_cost = sum(values(allocation_costs["VCG"]))
 
-println("Grand coalition imbalance: ", grand_coalition_imbalance)
-println("Sum of individual client imbalances: ", individual_imbalance_sum)
-println("Difference: ", grand_coalition_imbalance - individual_imbalance_sum)
-println("VCG cost: ", VCG_cost)
-println("VCG subsidies: ", grand_coalition_imbalance - VCG_cost)
+println("Grand coalition CVaR: ", grand_coalition_CVaR)
+println("Sum of individual client CVaR (THIS IS PROBABLY NOT A USEFUL MEASUREMENT): ", individual_CVaR_sum)
+#println("Difference: ", grand_coalition_imbalance - individual_imbalance_sum)
+#println("VCG cost: ", VCG_cost)
+#println("VCG subsidies: ", grand_coalition_imbalance - VCG_cost)
 
 # Define a struct to hold all relevant plotting data
 struct PlotData
@@ -99,14 +101,14 @@ plot_data = PlotData(
     allocations,
     systemData,
     allocation_costs,
-    imbalances,
+    coalitionCVaR,
     clients,
     start_hour,
     sim_days,
-    daily_cost_MWh_imbalance
+    0 # Placeholder for daily_cost_MWh_imbalance, as it is not calculated in this script
 )
 # Save plot_data to the "Results" subfolder
-serialize("Results/nucleolus_noise.jls", plot_data)
+serialize("Results/temp.jls", plot_data)
 
 # Use the struct for plotting
 plot_results(

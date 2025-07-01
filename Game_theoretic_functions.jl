@@ -5,29 +5,30 @@ using Combinatorics, NLsolve, HiGHS, JuMP#, Gurobi
 
 
 function calculate_allocations(
-    allocations, clients, coalitions, imbalances, hourly_imbalances, systemData; printing = true
+    allocations, clients, coalitions, coalitionCVaR, hourly_imbalances, systemData; printing = true
     )
     allocation_costs = Dict{String, Any}()
     allocation_map = Dict(
-        "shapley" => () -> shapley_value(clients, coalitions, imbalances),
-        "VCG" => () -> VCG_tax(clients, imbalances, hourly_imbalances, systemData; budget_balance=false),
-        "VCG_budget_balanced" => () -> VCG_tax(clients, imbalances, hourly_imbalances, systemData; budget_balance=true),
-        "gately_daily" => () -> deepcopy(gately_point(clients, imbalances)),
+        "shapley" => () -> shapley_value(clients, coalitions, coalitionCVaR),
+        #"VCG" => () -> VCG_tax(clients, coalitionCVaR, hourly_imbalances, systemData; budget_balance=false),
+        "VCG" => () -> simple_VCG(clients, coalitionCVaR),
+        "VCG_budget_balanced" => () -> VCG_tax(clients, coalitionCVaR, hourly_imbalances, systemData; budget_balance=true),
+        "gately" => () -> deepcopy(gately_point(clients, coalitionCVaR)),
         #"gately_daily" => () -> deepcopy(gately_point_daily(clients, hourly_imbalances, systemData)),
         "gately_interval" => () -> deepcopy(gately_point_interval(clients, hourly_imbalances, systemData)),
         "full_cost" => () -> deepcopy(full_cost_transfer(clients, hourly_imbalances, systemData)),
         "reduced_cost" => () -> deepcopy(reduced_cost(clients, hourly_imbalances, systemData)),
         "nucleolus" => () -> begin
-            _, nucleolus_values = nucleolus(clients, imbalances)
+            _, nucleolus_values = nucleolus(clients, coalitionCVaR)
             deepcopy(nucleolus_values)
         end,
-        "equal_share" => () -> deepcopy(equal_allocation(clients, imbalances))
+        "equal_share" => () -> deepcopy(equal_allocation(clients, coalitionCVaR))
     )
     allocation_print_map = Dict(
         "shapley" => "Shapley calculation time:",
         "VCG" => "VCG calculation time:",
         "VCG_budget_balanced" => "VCG budget balanced calculation time:",
-        "gately_daily" => "Gately calculation time, daily:",
+        "gately" => "Gately calculation time:",
         #"gately_daily" => "Gately calculation time, daily:",
         "gately_interval" => "Gately calculation time, interval:",
         "full_cost" => "Full cost transfer calculation time:",
@@ -136,6 +137,22 @@ function check_stability(payoffs, coalition_values, clients)
     end
     max_instability = maximum(values(instabilities))
     return max_instability
+end
+
+function simple_VCG(clients, coalitionCVaR)
+    # This function calculates the VCG value for each client in the grand coalition
+    grand_coalition = vec(clients)
+    grand_coalition_CVaR = coalitionCVaR[grand_coalition]
+    utilities = Dict{String, Float64}()
+    for client in clients
+        coalition_wo_client = filter(x -> x != client, grand_coalition)
+        coalition_value_wo_client = coalitionCVaR[coalition_wo_client]
+        # Calculate the VCG value for the client
+        VCG_value = (grand_coalition_CVaR-coalition_value_wo_client)
+        # Store the VCG value in a dictionary
+        utilities[client] = VCG_value
+    end
+    return utilities
 end
 
 function VCG_tax(clients, imbalance_costs, hourly_imbalances, systemData; budget_balance=false)

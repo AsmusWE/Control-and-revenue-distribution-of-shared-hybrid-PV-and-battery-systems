@@ -1,6 +1,9 @@
 #************************************************************************
 using JuMP
 using HiGHS
+using Combinatorics
+using Dates
+using Statistics
 #using Plots
 #using Gurobi
 
@@ -10,10 +13,9 @@ using HiGHS
 function optimize_imbalance(coalition, systemData)
     # Importing data that is always known
     clientPVOwnership = getindex.(Ref(systemData["clientPVOwnership"]), coalition)
-    #clientBatteryOwnership = getindex.(Ref(systemData["clientBatteryOwnership"]), coalition)
-    #TimeHorizon = 24 # Hours optimized
-    intervals_per_day = 96 # 15-min intervals per day
-    TimeHorizon = intervals_per_day
+    #intervals_per_day = 96 # 15-min intervals per day
+    #TimeHorizon = intervals_per_day
+    TimeHorizon = length(systemData["price_prod_demand_df"][!, "HourUTC_datetime"]) # Total number of 15-min intervals in the dataset
     first_hour = systemData["price_prod_demand_df"][1, "HourUTC_datetime"]
     weekday = dayofweek(first_hour)  # 1=Monday, 7=Sunday
     
@@ -47,8 +49,6 @@ function optimize_imbalance(coalition, systemData)
         error("Unknown PV forecast type: $(systemData["pv_forecast"])")
     end
     prod = pvProduction.*sum(clientPVOwnership)
-    upreg_price = systemData["upreg_price"]
-    downreg_price = systemData["downreg_price"]
 
     #************************************************************************
 
@@ -63,7 +63,8 @@ function optimize_imbalance(coalition, systemData)
     @variable(model, neg_imbal[1:T, 1:S] >= 0) # Negative imbalance
     @variable(model, bid[1:T]) # Bid amount
 
-    @objective(model, Min, prob * sum((downreg_price*pos_imbal[t, s] + upreg_price*neg_imbal[t, s]) for t in 1:T for s in 1:S)) # Objective function
+    # Imbalance should be as close to zero as possible
+    @objective(model, Min, prob * sum((pos_imbal[t, s] + neg_imbal[t, s]) for t in 1:T for s in 1:S)) # Objective function
 
     @constraint(model, [t = 1:T, s = 1:S],
                 imbal[t, s] == demand[t, s] - prod[t] - bid[t])
@@ -89,13 +90,10 @@ end
 struct CoalitionResults
     demand_sum::Vector{Float64}
     scaled_pvProd::Vector{Float64}
-    imbalance::Vector{Float64}
-    imbalance_cost::Float64
     bids::Vector{Float64}
 end
 
 struct PeriodResults
-    imbalances::Vector{Float64}
     interval_imbalance::Matrix{Float64}
 end
 
@@ -105,22 +103,12 @@ function calculate_imbalance(systemData, clients)
     bids_dict = calculate_bids(coalitions, systemData)
     demand_sum_vec = Vector{Vector{Float64}}(undef, n_coalitions)
     scaled_pvProd_vec = Vector{Vector{Float64}}(undef, n_coalitions)
-    imbalance_vec = Vector{Vector{Float64}}(undef, n_coalitions)
-    imbalance_cost_vec = Vector{Float64}(undef, n_coalitions)
     for (i, coalition) in enumerate(coalitions)
         demand_sum_vec[i] = sum(systemData["price_prod_demand_df"][!, c] for c in coalition)
         scaled_pvProd_vec[i] = systemData["price_prod_demand_df"][!, "SolarMWh"] .* sum(systemData["clientPVOwnership"][c] for c in coalition)
-        imbalance_vec[i] = get_imbalance(bids_dict[coalition], scaled_pvProd_vec[i], demand_sum_vec[i])
     end
-    upreg_price = systemData["upreg_price"]
-    downreg_price = systemData["downreg_price"]
-    for (i, _) in enumerate(coalitions)
-        positive_imbalance = sum(imbalance_vec[i][imbalance_vec[i] .> 0])
-        negative_imbalance = sum(imbalance_vec[i][imbalance_vec[i] .< 0])
-        imbalance_cost_vec[i] = positive_imbalance * downreg_price + abs(negative_imbalance) * upreg_price
-    end
-    results = [CoalitionResults(demand_sum_vec[i], scaled_pvProd_vec[i], imbalance_vec[i], imbalance_cost_vec[i], bids_dict[coalitions[i]]) for i in 1:n_coalitions]
-    return results, coalitions
+    results = [CoalitionResults(demand_sum_vec[i], scaled_pvProd_vec[i], bids_dict[coalitions[i]]) for i in 1:n_coalitions]
+    return results
 end
 
 function calculate_bids(coalitions, systemData)
@@ -140,59 +128,84 @@ function calculate_bids(coalitions, systemData)
     return bids
 end
 
-function period_imbalance(systemData, clients, startDay, days; threads=true, printing=true)
+function period_imbalance(systemData, clients, startDay, days; printing=true)
     # Calculate the starting interval index
     start_interval = findfirst(x -> x >= startDay, systemData["price_prod_demand_df"][!,"HourUTC_datetime"])
     coalitions = collect(combinations(clients))
     n_coalitions = length(coalitions)
     intervals_per_day = 96 # 15-min intervals per day
     intervals = days * intervals_per_day
-    period_imbalances = zeros(n_coalitions)
     period_interval_imbalance = zeros(n_coalitions, intervals)
-    if threads
-        thread_local_imbalances = [zeros(n_coalitions) for _ in 1:Threads.nthreads()]
-        thread_local_interval_imbalance = [zeros(n_coalitions, intervals) for _ in 1:Threads.nthreads()]
-        Threads.@threads for day in 1:days
-            if printing
-                println("Calculating imbalances for day ", day, " of ", days)
-            end
-            tid = Threads.threadid()
-            day_start = start_interval + (day - 1) * intervals_per_day
-            day_end = day_start + intervals_per_day - 1
-            dayData = deepcopy(systemData)
-            dayData["price_prod_demand_df"] = systemData["price_prod_demand_df"][day_start:day_end, :]
-            results, _ = calculate_imbalance(dayData, clients)
-            for (i, res) in enumerate(results)
-                thread_local_interval_imbalance[tid][i, (day-1)*intervals_per_day+1:day*intervals_per_day] = res.imbalance
-                thread_local_imbalances[tid][i] += res.imbalance_cost
-            end
+    for day in 1:days
+        if printing
+            println("Calculating imbalances for day ", day, " of ", days)
         end
-        for tid in 1:Threads.nthreads()
-            period_imbalances += thread_local_imbalances[tid]
-            period_interval_imbalance += thread_local_interval_imbalance[tid]
-        end
-    else
-        for day in 1:days
-            if printing
-                println("Calculating imbalances for day ", day, " of ", days)
-            end
-            day_start = start_interval + (day - 1) * intervals_per_day
-            day_end = day_start + intervals_per_day - 1
-            dayData = deepcopy(systemData)
-            dayData["price_prod_demand_df"] = systemData["price_prod_demand_df"][day_start:day_end, :]
-            results, _ = calculate_imbalance(dayData, clients)
-            for (i, res) in enumerate(results)
-                period_interval_imbalance[i, (day-1)*intervals_per_day+1:day*intervals_per_day] = res.imbalance
-                period_imbalances[i] += res.imbalance_cost
-            end
+        day_start = start_interval + (day - 1) * intervals_per_day
+        day_end = day_start + intervals_per_day - 1
+        dayData = deepcopy(systemData)
+        dayData["price_prod_demand_df"] = systemData["price_prod_demand_df"][day_start:day_end, :]
+        results = calculate_imbalance(dayData, clients)
+        for (i, res) in enumerate(results)
+            # Calculate hourly imbalance for this coalition
+            hourly_imbalance = get_imbalance(res.bids, res.scaled_pvProd, res.demand_sum)
+            period_interval_imbalance[i, (day-1)*intervals_per_day+1:day*intervals_per_day] = hourly_imbalance
         end
     end
     
-    # Convert period_imbalances and period_interval_imbalance to dictionaries for easier access 
+    # Convert period_interval_imbalance to dictionary for easier access 
     # Keys are coalitions
-    period_imbalances = Dict(coalitions[i] => period_imbalances[i] for i in 1:n_coalitions)
-    period_interval_imbalance = Dict(coalitions[i] => period_interval_imbalance[i, :] for i in 1:n_coalitions)
+    # period_interval_imbalance = Dict(coalitions[i] => period_interval_imbalance[i, :] for i in 1:n_coalitions)
 
-    return period_imbalances, period_interval_imbalance
+    return coalitions, period_interval_imbalance
 end
+
+
+function calculate_CVaR(systemData, clients, startDay, days; alpha=0.05, threads=false, printing=false)
+    # Calculates the Conditional Value at Risk (CVaR) for each coalition over a specified period
+    # The CVaR is the highest values, not the worst, as this is a cost minimization problem
+    
+    #coalitions,period_interval_imbalance  = period_imbalance(systemData, clients, startDay, days)
+    start_interval = findfirst(x -> x >= startDay, systemData["price_prod_demand_df"][!,"HourUTC_datetime"])
+    intervals_per_day = 96 # 15-min intervals per day
+    intervals = days * intervals_per_day
+    # Creating a dataframe that only contains the data for the specified days
+    tempData = deepcopy(systemData)
+    try
+        tempData["price_prod_demand_df"] = systemData["price_prod_demand_df"][start_interval:start_interval+intervals-1, :]
+    catch e
+        if isa(e, BoundsError)
+            error("The specified startDay and days exceed the available data range. Max data range for current data is from $(systemData["price_prod_demand_df"][1, "HourUTC_datetime"]) to $(systemData["price_prod_demand_df"][end, "HourUTC_datetime"]).")
+        else
+            rethrow(e)
+        end
+    end
+    coalitions = collect(combinations(clients))
+    # Calculating the imbalances
+    results = calculate_imbalance(tempData, clients)
+    period_interval_imbalance = zeros(length(coalitions), intervals) # Initialize the imbalance matrix
+    for (i, res) in enumerate(results)
+        # Calculate hourly imbalance for this coalition
+        hourly_imbalance = get_imbalance(res.bids, res.scaled_pvProd, res.demand_sum)
+        period_interval_imbalance[i, :] = hourly_imbalance
+    end
+    
+    imbalance_spread = tempData["price_prod_demand_df"][!, "ImbalanceSpreadEUR"]  # Get the imbalance spread from the DataFrame
+    # Calculate the CVaR for each coalition
+    cvar_array = zeros(length(coalitions))
+    for (i, coalition) in enumerate(coalitions)
+        imbalances = period_interval_imbalance[i, :] .* imbalance_spread  # Find the cost of the imbalances for this coalition
+        sorted_imbalances = sort(imbalances, rev=true)  # Sort in descending order (highest first)
+        n = length(sorted_imbalances)
+        index = ceil(Int, n * alpha)  # Index for CVaR
+        cvar_value = mean(sorted_imbalances[1:index])  # Average of the highest alpha% of imbalances
+        cvar_array[i] = cvar_value
+    end
+    # Convert the CVaR array to a dictionary for easier access
+    cvar_dict = Dict{Any, Float64}()
+    for (i, coalition) in enumerate(coalitions)
+        cvar_dict[coalition] = cvar_array[i]
+    end
+    return cvar_dict
+end
+
 

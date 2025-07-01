@@ -107,7 +107,9 @@ def plot_excess():
     plt.savefig('Results/excess_plot.svg', bbox_inches='tight')
     plt.show()
 
+
 if __name__ == "__main__":
     plot_relative_imbalance()
-    plot_excess()
+    #plot_excess()
+    
 

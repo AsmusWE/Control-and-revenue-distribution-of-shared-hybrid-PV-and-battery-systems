@@ -19,7 +19,6 @@ function load_data()
     pvOwnershipDF = CSV.read("Data/Asset_master_data_asmus.csv", DataFrame; decimal=',')
     clientPVOwnership = Dict(String(row.Customer) => row.a_ppa_pct for row in eachrow(pvOwnershipDF))
     # Note: Z is the solar park owner
-    clientPVOwnership["Z"] = 1-sum(values(clientPVOwnership)) # Total ownership of the solar park
 
     # --- Load and rescale PV production ---
     pvProduction = CSV.read("Data/ProductionMunicipalityHour.csv", DataFrame; decimal=',')
@@ -29,10 +28,6 @@ function load_data()
     rename!(pvProduction, :SolarMWh => :SolarMWh_unscaled)
     pvProduction[!, :SolarMWh] = pvProduction[!, :SolarMWh_unscaled] .* plant_size / old_plant_size
     pvProduction = select(pvProduction, [:HourUTC_datetime, :SolarMWh])
-
-    # --- Load imbalance price data ---
-    #ImbPriceData = CSV.read("Data/ImbalancePrice.csv", DataFrame; decimal=',')
-    #ImbPriceData[!, :HourUTC_datetime] = DateTime.(ImbPriceData[:, :HourUTC], DateFormat("yyyy-mm-dd HH:MM:SS"))
 
     # --- Combine demand and PV production ---
     combinedData = innerjoin(pvProduction, demand, on=:HourUTC_datetime)

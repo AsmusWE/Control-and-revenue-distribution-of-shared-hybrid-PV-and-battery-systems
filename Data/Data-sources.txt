@@ -1,3 +1,2 @@
 https://www.energidataservice.dk/tso-electricity/ProductionMunicipalityHour
-https://www.energidataservice.dk/tso-electricity/Elspotprices
 https://www.energidataservice.dk/tso-electricity/Forecasts_Hour

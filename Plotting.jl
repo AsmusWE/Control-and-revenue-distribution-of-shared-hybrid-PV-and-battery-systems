@@ -35,9 +35,9 @@ function plot_results(
         "shapley" => ("Shapley", :red),
         "VCG" => ("VCG", :yellow),
         "VCG_budget_balanced" => ("VCG Budget Balanced", :orange),
-        "gately_full" => ("Gately Full", :grey),
-        "gately_daily" => ("Gately Daily", :black),
-        "gately_hourly" => ("Gately Hourly", :lightgrey),
+        "gately_daily" => ("Gately Daily", :grey),
+        #"gately_daily" => ("Gately Daily", :black),
+        "gately_interval" => ("Gately 15Min interval", :lightgrey),
         "full_cost" => ("Full Cost", :pink),
         "reduced_cost" => ("Reduced Cost", :lightblue),
         "nucleolus" => ("Nucleolus", :green),
@@ -134,9 +134,9 @@ function save_rel_imbal(all_noise, all_scen, nuc_noise, nuc_scen)
         "shapley" => ("Shapley", :red),
         "VCG" => ("VCG", :yellow),
         "VCG_budget_balanced" => ("VCG Budget Balanced", :orange),
-        "gately_full" => ("Gately Full", :grey),
-        "gately_daily" => ("Gately Daily", :black),
-        "gately_hourly" => ("Gately Hourly", :lightgrey),
+        "gately_daily" => ("Gately Daily", :grey),
+        #"gately_daily" => ("Gately Daily", :black),
+        "gately_interval" => ("Gately 15Min interval", :lightgrey),
         "full_cost" => ("Full Cost", :pink),
         "reduced_cost" => ("Reduced Cost", :lightblue),
         "nucleolus" => ("Nucleolus", :green)
@@ -173,6 +173,36 @@ function save_rel_imbal(all_noise, all_scen, nuc_noise, nuc_scen)
     return all_rows
 end
 
+function save_variance_data(
+    allocations,
+    allocation_costs,
+    daily_cost_MWh_imbalance,
+    imbalances,
+    clients,
+    sim_days;
+    scenario_name = ""
+)
+    rows = DataFrame()
+    for alloc in allocations
+        for client in clients
+            for day in 1:sim_days
+                value = daily_cost_MWh_imbalance[client, alloc, day]
+                mean_val_weighted = allocation_costs[alloc][client] / imbalances[[client]]
+                push!(rows, (
+                    Scenario = scenario_name,
+                    Allocation = alloc,
+                    Client = client,
+                    Day = day,
+                    Value = value,
+                    WeightedMean = mean_val_weighted
+                ))
+            end
+        end
+    end
+    CSV.write("Results/variance_data.csv", rows)
+    return rows
+end
+
 function plot_variance(
     allocations,
     allocation_costs,
@@ -186,12 +216,13 @@ function plot_variance(
         "shapley" => ("Shapley", :red),
         "VCG" => ("VCG", :yellow),
         "VCG_budget_balanced" => ("VCG Budget Balanced", :orange),
-        "gately_full" => ("Gately Full", :grey),
-        "gately_daily" => ("Gately Daily", :black),
-        "gately_hourly" => ("Gately Hourly", :lightgrey),
+        "gately_daily" => ("Gately Daily", :grey),
+        #"gately_daily" => ("Gately Daily", :black),
+        "gately_interval" => ("Gately 15Min interval", :lightgrey),
         "full_cost" => ("Full Cost", :pink),
         "reduced_cost" => ("Reduced Cost", :lightblue),
-        "nucleolus" => ("Nucleolus", :green)
+        "nucleolus" => ("Nucleolus", :green),
+        "equal_share" => ("Equal Share", :purple)
     )
 
     p_variance = plot(

@@ -1,4 +1,4 @@
-function generate_scenarios(clients, demandDF, start_hour; num_scenarios = 100, scen_length = 24)
+function generate_scenarios(clients, demandDF, start_hour; num_scenarios = 100, scen_length = 96)
     # Find the index of the first value after the start_hour in the demandDF
     start_idx = findfirst(demandDF[:, :HourUTC_datetime] .> start_hour)
     if start_idx === nothing

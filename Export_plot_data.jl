@@ -13,10 +13,10 @@ struct PlotData
     sim_days::Int
     daily_cost_MWh_imbalance::Any
 end
-plot_data_all_noise = deserialize("plot_data_all_noise.jls")
-plot_data_all_scenarios = deserialize("plot_data_all_scen.jls")
-plot_data_nuc_noise = deserialize("plot_data_nuc_noise.jls")
-plot_data_nuc_scenarios = deserialize("plot_data_nuc_scen.jls")
+plot_data_all_noise = deserialize("Results/all_noise.jls")
+plot_data_all_scenarios = deserialize("Results/all_scen.jls")
+plot_data_nuc_noise = deserialize("Results/nucleolus_noise.jls")
+plot_data_nuc_scenarios = deserialize("Results/nucleolus_scen.jls")
 structs = [
     ("All, Noise", plot_data_all_noise),
     ("All, Scenario", plot_data_all_scenarios),

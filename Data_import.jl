@@ -19,7 +19,6 @@ function load_data()
     pvOwnershipDF = CSV.read("Data/Asset_master_data_asmus.csv", DataFrame; decimal=',')
     clientPVOwnership = Dict(String(row.Customer) => row.a_ppa_pct for row in eachrow(pvOwnershipDF))
     # Note: Z is the solar park owner
-    clientPVOwnership["Z"] = 1-sum(values(clientPVOwnership)) 
 
     # --- Load and rescale PV production ---
     pvProduction = CSV.read("Data/ProductionMunicipalityHour.csv", DataFrame; decimal=',')
@@ -29,11 +28,6 @@ function load_data()
     rename!(pvProduction, :SolarMWh => :SolarMWh_unscaled)
     pvProduction[!, :SolarMWh] = pvProduction[!, :SolarMWh_unscaled] .* plant_size / old_plant_size
     pvProduction = select(pvProduction, [:HourUTC_datetime, :SolarMWh])
-
-    # --- Load price data ---
-    #priceData = CSV.read("Data/Elspotprices.csv", DataFrame; decimal=',')
-    #priceData[!, :HourUTC_datetime] = DateTime.(priceData[:, :HourUTC], DateFormat("yyyy-mm-dd HH:MM:SS"))
-    #priceData = select(priceData, [:HourUTC_datetime, :SpotPriceDKK])
 
     # --- Combine demand and PV production ---
     combinedData = innerjoin(pvProduction, demand, on=:HourUTC_datetime)
@@ -55,6 +49,23 @@ function load_data()
     # --- Filter clients with missing data ---
     missing_data_counts = Dict(client => count(ismissing, demand[:, client]) for client in clients)
     clients_without_missing_data = filter(client -> missing_data_counts[client] == 0, clients)
+
+    # --- Filter combined data to include only clients without missing data ---
+    combinedData = select(combinedData, Cols(:HourUTC_datetime, :SolarMWh, clients_without_missing_data..., :PVForecast))
+
+    # --- Change to 15 minute resolution ---
+    # Expand each row to 4 rows (15-minute intervals), dividing values by 4
+    value_cols = names(combinedData, Not(:HourUTC_datetime))
+    N = nrow(combinedData)
+    repeats = 4
+    # Repeat each row 4 times
+    expanded = combinedData[repeat(1:N, inner=repeats), :]
+    # Add 15-min offset to each repeated row
+    expanded.:HourUTC_datetime .+= Minute.(15 .* repeat(0:3, outer=N))
+    # Divide value columns by 4
+    expanded[:, value_cols] .= expanded[:, value_cols] ./ 4
+    combinedData = expanded
+    sort!(combinedData, :HourUTC_datetime)
 
     # --- Collect system data ---
     systemData = Dict(

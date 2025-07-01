@@ -12,9 +12,9 @@ function calculate_allocations(
         "shapley" => () -> shapley_value(clients, coalitions, imbalances),
         "VCG" => () -> VCG_tax(clients, imbalances, hourly_imbalances, systemData; budget_balance=false),
         "VCG_budget_balanced" => () -> VCG_tax(clients, imbalances, hourly_imbalances, systemData; budget_balance=true),
-        "gately_full" => () -> deepcopy(gately_point(clients, imbalances)),
-        "gately_daily" => () -> deepcopy(gately_point_daily(clients, hourly_imbalances, systemData)),
-        "gately_hourly" => () -> deepcopy(gately_point_hourly(clients, hourly_imbalances, systemData)),
+        "gately_daily" => () -> deepcopy(gately_point(clients, imbalances)),
+        #"gately_daily" => () -> deepcopy(gately_point_daily(clients, hourly_imbalances, systemData)),
+        "gately_interval" => () -> deepcopy(gately_point_interval(clients, hourly_imbalances, systemData)),
         "full_cost" => () -> deepcopy(full_cost_transfer(clients, hourly_imbalances, systemData)),
         "reduced_cost" => () -> deepcopy(reduced_cost(clients, hourly_imbalances, systemData)),
         "nucleolus" => () -> begin
@@ -27,9 +27,9 @@ function calculate_allocations(
         "shapley" => "Shapley calculation time:",
         "VCG" => "VCG calculation time:",
         "VCG_budget_balanced" => "VCG budget balanced calculation time:",
-        "gately_full" => "Gately calculation time, full period:",
         "gately_daily" => "Gately calculation time, daily:",
-        "gately_hourly" => "Gately calculation time, hourly:",
+        #"gately_daily" => "Gately calculation time, daily:",
+        "gately_interval" => "Gately calculation time, interval:",
         "full_cost" => "Full cost transfer calculation time:",
         "reduced_cost" => "reduced cost calculation time:",
         "nucleolus" => "Nucleolus calculation time:",
@@ -53,24 +53,25 @@ function allocation_variance(
     allocations::Vector{String}, 
     clients::Vector{String}, 
     coalitions::Vector{Vector{String}}, 
-    systemData::Dict, 
+    systemData, 
     start_hour, 
     sim_days::Int
 )
-    # This function calculates the allocations for each day and returns the costs, imbalances, and hourly imbalances
+    # This function calculates the allocations for each day and returns the costs, imbalances, and interval (15-min) imbalances
 
+    intervals_per_day = 96 # 15-min intervals per day
     # Initialize data structures
     allocation_costs_daily_scaled = Dict{Tuple{String, String, Int}, Float64}()
     allocation_costs = Dict(allocation => Dict(client => 0.0 for client in clients) for allocation in allocations)
     imbalances = Dict(coalition => 0.0 for coalition in coalitions)
-    hourly_imbalances = Dict(client => Float64[] for client in clients)
+    interval_imbalances = Dict(client => Float64[] for client in clients)
 
     for day in 1:sim_days
-        curr_hour = start_hour + Dates.Hour((day - 1) * 24)
+        curr_interval = start_hour + Dates.Minute((day - 1) * intervals_per_day * 15)
         println("Calculating allocations for day $day")
-        imbalances_day, hourly_imbalances_day = period_imbalance(systemData, clients, curr_hour, 1; threads = false, printing = false)
+        imbalances_day, interval_imbalances_day = period_imbalance(systemData, clients, curr_interval, 1; threads = false, printing = false)
         daily_allocations = calculate_allocations(
-            allocations, clients, coalitions, imbalances_day, hourly_imbalances_day, systemData; printing = false
+            allocations, clients, coalitions, imbalances_day, interval_imbalances_day, systemData; printing = false
         )
         # Extracting allocations and adding them to total client allocation
         for allocation in allocations
@@ -81,16 +82,16 @@ function allocation_variance(
                 allocation_costs_daily_scaled[(client, allocation, day)] = alloc[client] / imbalances_day[[client]]
             end
         end
-        # Accumulate imbalances and hourly imbalances
+        # Accumulate imbalances and interval imbalances
         for (coalition, imbalance) in imbalances_day
             imbalances[coalition] += imbalance
         end
         for client in clients
-            append!(hourly_imbalances[client], hourly_imbalances_day[[client]])
+            append!(interval_imbalances[client], interval_imbalances_day[[client]])
         end
     end
 
-    return allocation_costs_daily_scaled, allocation_costs, imbalances, hourly_imbalances
+    return allocation_costs_daily_scaled, allocation_costs, imbalances, interval_imbalances
 end
 
 
@@ -250,33 +251,33 @@ function gately_point(clients, imbalance_costs)
     return gately_distribution
 end
 
-function gately_point_hourly(clients, hourly_imbalances, systemData)
-    # This function applies the Gately point calculation for each hour
+function gately_point_interval(clients, interval_imbalances, systemData)
+    # This function applies the Gately point calculation for each interval (15-min)
     upreg_price = systemData["upreg_price"]
     downreg_price = systemData["downreg_price"]
     coalitions = collect(combinations(clients))
-    T = length(hourly_imbalances[[clients[1]]])
+    T = length(interval_imbalances[[clients[1]]])
     gately_distribution = Dict(client => 0.0 for client in clients)
 
     for t in 1:T
-        # Build imbalance_costs for the current hour
+        # Build imbalance_costs for the current interval
         imbalance_costs = Dict{Vector{String}, Float64}()
         for coalition in coalitions
-            temp_cost = sum(hourly_imbalances[[c]][t] for c in coalition)
+            temp_cost = sum(interval_imbalances[[c]][t] for c in coalition)
             if temp_cost < 0
                 imbalance_costs[coalition] = abs(temp_cost) * upreg_price
             else
                 imbalance_costs[coalition] = temp_cost * downreg_price
             end
         end
-        # Calculate Gately point for the current hour and add to the distribution
-        gately_hour = gately_point(clients, imbalance_costs)
-        # Check for NaN values in the Gately distribution for the current hour
-        if any(isnan, values(gately_hour))
-            println("Warning: NaN detected in Gately distribution for hour $t.")
+        # Calculate Gately point for the current interval and add to the distribution
+        gately_interval = gately_point(clients, imbalance_costs)
+        # Check for NaN values in the Gately distribution for the current interval
+        if any(isnan, values(gately_interval))
+            println("Warning: NaN detected in Gately distribution for interval $t.")
         end
         for client in clients
-            gately_distribution[client] += gately_hour[client]
+            gately_distribution[client] += gately_interval[client]
         end
     end
     return gately_distribution

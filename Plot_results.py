@@ -13,9 +13,9 @@ def plot_relative_imbalance():
         "shapley": ("Shapley", "red"),
         "VCG": ("VCG", "yellow"),
         "VCG_budget_balanced": ("VCG Budget Balanced", "orange"),
-        "gately_full": ("Gately Full", "grey"),
+        "gately_daily": ("Gately Daily", "grey"),
         #"gately_daily": ("Gately Daily", "black"),
-        "gately_hourly": ("Gately Hourly", "lightgrey"),
+        "gately_interval": ("Gately 15Min interval", "lightgrey"),
         "full_cost": ("Full Cost", "pink"),
         #"reduced_cost": ("Reduced Cost", "lightblue"),
         "nucleolus": ("Nucleolus", "green")

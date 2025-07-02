@@ -1,4 +1,4 @@
-using Combinatorics, NLsolve, HiGHS, JuMP#, Gurobi
+using Combinatorics, HiGHS, JuMP#, Gurobi, NLsolve,
 # Initializing the Gurobi environment
 # This is necessary to surpress some of the Gurobi output
 #const GUROBI_ENV = Gurobi.Env()
@@ -362,109 +362,147 @@ end
 
 
 function nucleolus(clients, imbalances)
-    # Use sorted tuples for coalition keys and arrays for fast access
-    coalitions = [Tuple(sort(c)) for c in collect(combinations(clients))]
-    coalition_index = Dict(c => i for (i, c) in enumerate(coalitions))
-    # Build imbalances as a vector
-    imbalances_vec = zeros(Float64, length(coalitions))
-    for (i, c) in enumerate(coalitions)
-        if haskey(imbalances, c)
-            imbalances_vec[i] = imbalances[c]
-        elseif haskey(imbalances, collect(c))
-            imbalances_vec[i] = imbalances[collect(c)]
+    # Optimized nucleolus computation with reduced memory allocations
+    n_clients = length(clients)
+    coalitions = collect(combinations(clients))
+    n_coalitions = length(coalitions)
+    
+    # Pre-allocate and cache coalition indices for faster access
+    client_to_idx = Dict(client => i for (i, client) in enumerate(clients))
+    coalition_indices = Vector{Vector{Int}}(undef, n_coalitions)
+    
+    # Build coalition indices and imbalances vector more efficiently
+    imbalances_vec = Vector{Float64}(undef, n_coalitions)
+    
+    for (i, coalition) in enumerate(coalitions)
+        # Convert client names to indices for faster constraint building
+        coalition_indices[i] = [client_to_idx[client] for client in coalition]
+        
+        # Look up imbalance value with fallback
+        if haskey(imbalances, coalition)
+            imbalances_vec[i] = imbalances[coalition]
         else
-            imbalances_vec[i] = 0.0
+            # Try as sorted tuple (more efficient than collect)
+            sorted_coalition = sort(coalition)
+            imbalances_vec[i] = get(imbalances, sorted_coalition, 0.0)
         end
     end
-    # locked_excesses: nothing means not locked, otherwise Float64
-    locked_excesses_vec = Vector{Union{Nothing, Float64}}(undef, length(coalitions))
-    fill!(locked_excesses_vec, nothing)
+    
+    # Use BitVector for locked status - much more memory efficient than Union{Nothing, Float64}
+    locked_status = falses(n_coalitions)
+    locked_values = zeros(Float64, n_coalitions)
+    
+    # Find grand coalition index once
+    grand_coalition_idx = findfirst(c -> length(c) == n_clients, coalitions)
+    
     payments = Dict{String, Float64}()
-    while true
+    max_iterations = n_coalitions  # Prevent infinite loops
+    iteration = 0
+    
+    while iteration < max_iterations
+        iteration += 1
+        
         try
-            max_excess, new_locked_excesses, payments = nucleolus_optimize(clients, imbalances_vec, locked_excesses_vec, coalitions, coalition_index)
-            # Only update if optimization was successful
-            for (idx, val) in new_locked_excesses
-                locked_excesses_vec[idx] = val
+            max_excess, new_locked_indices, new_payments = nucleolus_optimize_fast(
+                n_clients, imbalances_vec, locked_status, locked_values, 
+                coalition_indices, grand_coalition_idx
+            )
+            
+            # Update locked status efficiently
+            for idx in new_locked_indices
+                locked_status[idx] = true
+                locked_values[idx] = max_excess
             end
+            
+            # Update payments
+            for (i, client) in enumerate(clients)
+                payments[client] = new_payments[i]
+            end
+            
+            # Check if we're done (all coalitions except grand coalition are locked)
+            if count(locked_status) >= n_coalitions - 1
+                break
+            end
+            
         catch e
-            # Handle the case where no optimal solution is found
-            nlocked = count(!isnothing, locked_excesses_vec)
-            if nlocked == length(coalitions) - 1
-                # If all coalitions except grand coalition are locked, we can return the nucleolus
-                # Return as Dict for compatibility
-                locked_dict = Dict(coalitions[i] => v for (i, v) in enumerate(locked_excesses_vec) if !isnothing(v))
+            if count(locked_status) >= n_coalitions - 1
+                # Return current solution
+                locked_dict = Dict{Vector{String}, Float64}()
+                for (i, coalition) in enumerate(coalitions)
+                    if locked_status[i]
+                        locked_dict[coalition] = locked_values[i]
+                    end
+                end
                 return locked_dict, payments
             else
-                println("An error occurred: ", e)
+                println("Nucleolus optimization failed: ", e)
                 return nothing, nothing
             end
         end
     end
+    
+    # Build final locked dictionary
+    locked_dict = Dict{Vector{String}, Float64}()
+    for (i, coalition) in enumerate(coalitions)
+        if locked_status[i]
+            locked_dict[coalition] = locked_values[i]
+        end
+    end
+    
+    return locked_dict, payments
 end
 
-function nucleolus_optimize(clients, imbalances_vec, locked_excesses_vec, coalitions, coalition_index)
-    # Use arrays for imbalances and locked_excesses
-    coalition_indices = [findall(x -> x in c, clients) for c in coalitions]
-    locked_indices = findall(!isnothing, locked_excesses_vec)
-    grand_coalition = Tuple(sort(clients))
-    gc_idx = coalition_index[grand_coalition]
-    A = length(clients)
-    C = length(coalitions)
-
+function nucleolus_optimize_fast(n_clients, imbalances_vec, locked_status, locked_values, 
+                                coalition_indices, grand_coalition_idx)
+    n_coalitions = length(coalition_indices)
+    
+    # Create model with optimized settings
     model = Model(HiGHS.Optimizer)
     set_silent(model)
-    #model = Model(() -> Gurobi.Optimizer(GUROBI_ENV))
-    #set_optimizer_attribute(model, "OutputFlag", 0)
-
-    @variable(model, payment[1:A])
+    
+    # Set HiGHS-specific parameters for better performance
+    set_optimizer_attribute(model, "presolve", "on")
+    set_optimizer_attribute(model, "parallel", "on")
+    
+    @variable(model, payment[1:n_clients])
     @variable(model, max_excess)
     @objective(model, Min, max_excess)
-
-    @constraint(model, excess_cons[c = 1:C; c != gc_idx && !(c in locked_indices)],
-                sum(payment[i] for i in coalition_indices[c]) - imbalances_vec[c] <= max_excess)
-    @constraint(model, sum(payment) == imbalances_vec[gc_idx])
-    @constraint(model, [c = locked_indices],
-                sum(payment[i] for i in coalition_indices[c]) - imbalances_vec[c] == locked_excesses_vec[c])
-
-    solution = optimize!(model)
+    
+    # Build constraints more efficiently using pre-computed indices
+    unlocked_coalitions = findall(i -> !locked_status[i] && i != grand_coalition_idx, 1:n_coalitions)
+    
+    # Excess constraints only for unlocked coalitions (excluding grand coalition)
+    @constraint(model, excess_cons[i in unlocked_coalitions],
+                sum(payment[j] for j in coalition_indices[i]) - imbalances_vec[i] <= max_excess)
+    
+    # Grand coalition constraint (budget balance)
+    @constraint(model, sum(payment) == imbalances_vec[grand_coalition_idx])
+    
+    # Locked coalition constraints
+    locked_coalitions = findall(locked_status)
+    @constraint(model, [i in locked_coalitions],
+                sum(payment[j] for j in coalition_indices[i]) - imbalances_vec[i] == locked_values[i])
+    
+    optimize!(model)
+    
     if termination_status(model) == MOI.OPTIMAL
-        dual_values = dual.(excess_cons)
-        new_locked_excesses = Dict{Int, Float64}()
-        # Finding max excess(es)
-        excess_values = [value(sum(payment[i] for i in coalition_indices[c]) - imbalances_vec[c]) for c in 1:C]
-        max_excess_val = maximum(excess_values)
-        tol = 1e-6
-        for c in 1:C
-            if abs(excess_values[c] - max_excess_val) < tol && c != gc_idx && !(c in locked_indices)
-                new_locked_excesses[c] = max_excess_val
+        payment_values = value.(payment)
+        max_excess_val = objective_value(model)
+        
+        # Find coalitions that achieve maximum excess
+        new_locked_indices = Int[]
+        tol = 1e-8  # Slightly tighter tolerance for better numerical stability
+        
+        for i in unlocked_coalitions
+            excess_val = sum(payment_values[j] for j in coalition_indices[i]) - imbalances_vec[i]
+            if abs(excess_val - max_excess_val) < tol
+                push!(new_locked_indices, i)
             end
         end
-        for i in eachindex(dual_values)
-            if dual_values[i] < -1e-6
-                new_locked_excesses[i[1]] = objective_value(model)
-            end
-        end
-        payments = Dict{String, Float64}()
-        for (idx, client) in enumerate(clients)
-            payments[client] = value.(payment[idx])
-        end
-        return objective_value(model), new_locked_excesses, payments
+        
+        return max_excess_val, new_locked_indices, payment_values
     else
-        println("No optimal solution found")
-        println("Checking if all coalitions are locked...")
-        found = false
-        for c in 1:C
-            if c != gc_idx && !(c in locked_indices)
-                println(coalitions[c])
-                found = true
-            end
-        end
-        if found
-            println("Not all coalitions are locked, the problem is unbounded and there is an error")
-        else
-            println("All coalitions are locked, the nucleolus has been found")
-        end
+        error("No optimal solution found in nucleolus optimization")
     end
 end
 

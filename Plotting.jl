@@ -61,8 +61,33 @@ function plot_results(
     end
     display(p_fees_MWh)
 
+    # Plot CVaR per MWh compared to percentage of demand covered by PV production
+    pv_coverage_ratio = Dict()
+    for client in plotKeys
+        total_demand = sum(dayData["price_prod_demand_df"][!, Symbol(client)])
+        total_pv_for_client = sum(dayData["price_prod_demand_df"][!, "SolarMWh"]) * systemData["clientPVOwnership"][client]
+        pv_coverage_ratio[client] = (total_pv_for_client / total_demand) * 100  # Convert to percentage
+    end
+    
+    p_cvar_vs_pv = plot(
+        title="CVaR per MWh vs PV Coverage",
+        xlabel="PV Coverage of Demand [%]",
+        ylabel="CVaR/MWh [(€/15min)/MWh]",
+        legend=:topright
+    )
+    
+    for alloc in allocations
+        if haskey(cost_MWh, alloc)
+            label, color = allocation_labels[alloc]
+            x_vals = [pv_coverage_ratio[k] for k in plotKeys]
+            y_vals = [cost_MWh[alloc][k] for k in plotKeys]
+            scatter!(p_cvar_vs_pv, x_vals, y_vals, label=label, color=color, alpha=0.7)
+        end
+    end
+    display(p_cvar_vs_pv)
+
     # Total CVaR
-    p_fees_total = plot(title="CVaR contribution [€/15min]", xlabel="Client", ylabel="Total CVaR", xticks=(1:length(plotKeys), plotKeys), xrotation=45)
+    p_fees_total = plot(title="CVaR contribution per client", xlabel="Client", ylabel="CVaR [€/15min]", xticks=(1:length(plotKeys), plotKeys), xrotation=45)
     for alloc in allocations
         if haskey(allocation_costs, alloc)
             label, color = allocation_labels[alloc]
@@ -104,6 +129,25 @@ function plot_results(
     end
     display(p_CVaRRatio)
 
+    # Plot CVaRRatio vs PV Coverage
+    p_cvar_ratio_vs_pv = plot(
+        title="CVaR Ratio vs PV Coverage",
+        xlabel="PV Coverage of Demand [%]",
+        ylabel="CVaR Contribution / Individual CVaR [%]",
+        legend=:topright,
+        ylim = (0, 100)
+    )
+    
+    for alloc in allocations
+        if haskey(CVaRRatio, alloc)
+            label, color = allocation_labels[alloc]
+            x_vals = [pv_coverage_ratio[k] for k in plotKeys]
+            y_vals = [CVaRRatio[alloc][k] for k in plotKeys]
+            scatter!(p_cvar_ratio_vs_pv, x_vals, y_vals, label=label, color=color, alpha=0.7)
+        end
+    end
+    display(p_cvar_ratio_vs_pv)
+
     # Plot aggregate demand, PV production, bids, and imbalance
     #p_aggregate = plot(title="Aggregate Demand, PV Production, Bids, and Imbalance", xlabel="Hour", ylabel="Value")
     #aggregate_demand = sum(dayData["price_prod_demand_df"][!, client] for client in clients_without_missing_data)
@@ -116,6 +160,9 @@ function plot_results(
     #plot!(p_aggregate, 1:n_hours, combined_bids, label="Combined Bids")
     #plot!(p_aggregate, 1:n_hours, combined_imbalance, label="Combined Imbalance")
     #display(p_aggregate)
+
+    
+
 
     # Plot total MWh demand per client
     total_MWh_demand = Dict(client => sum(dayData["price_prod_demand_df"][!, Symbol(client)]) for client in plotKeys)

@@ -26,9 +26,12 @@ coalitions = collect(combinations(clients))
 
 # First hour 2024-03-04T12:00:00
 # Last hour 2025-04-26T03:45:00
-start_hour = DateTime(2025, 4, 10, 0, 0, 0)
-sim_days = 15
+#start_hour = DateTime(2025, 4, 10, 0, 0, 0)
+start_hour = DateTime(2024, 3, 4, 12, 0, 0)
+sim_days = 40
 num_scenarios = 5
+
+alpha = 0.05 # CVaR alpha level
 
 
 # Accepted forecast types: "perfect", "scenarios", "noise"
@@ -39,8 +42,13 @@ systemData["pv_forecast"] = "noise"
 systemData["demand_noise_std"] = 0.17
 systemData["pv_noise_std"] = 0.32
 
-systemData["demand_scenarios"] = generate_scenarios_demand(clients, systemData["price_prod_demand_df"], start_hour; num_scenarios=num_scenarios)
-systemData["pv_forecast_noise"] = generate_noise_forecast_PV(clients, systemData, start_hour, sim_days)
+if systemData["demand_forecast"] == "scenarios"
+    systemData["demand_scenarios"] = generate_scenarios_demand(clients, systemData["price_prod_demand_df"], start_hour; num_scenarios=num_scenarios)
+end
+if systemData["pv_forecast"] == "noise"
+    systemData["pv_forecast_noise"] = generate_noise_forecast_PV(clients, systemData, start_hour, sim_days)
+end
+
 
 
 allocations = [
@@ -61,7 +69,7 @@ allocations = [
 # =========================
 # Calculating CVaR
 println("Calculating CVaR for coalitions...")
-coalitionCVaR, imbalances, demandForecast, pvForecast = @time calculate_CVaR(systemData, clients, start_hour, sim_days; alpha=0.1)
+coalitionCVaR, imbalances, demandForecast, pvForecast = @time calculate_CVaR(systemData, clients, start_hour, sim_days; alpha=alpha)
 
 # Checking MAE
 MAE_demand, MAE_pv = calculate_MAE(systemData, demandForecast, pvForecast, clients, start_hour, sim_days)

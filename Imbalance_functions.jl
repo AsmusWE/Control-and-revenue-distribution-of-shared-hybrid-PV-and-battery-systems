@@ -190,44 +190,53 @@ end
 
 
 function calculate_CVaR(systemData, clients, startDay, days; alpha=0.05, threads=false, printing=false)
-    # Calculates the Conditional Value at Risk (CVaR) for each coalition over a specified period
+    # Optimized CVaR calculation that reduces memory allocations and GC pressure
     # The CVaR is the highest values, not the worst, as this is a cost minimization problem
     
-    #coalitions,period_interval_imbalance  = period_imbalance(systemData, clients, startDay, days)
     tempData = set_period!(systemData, startDay, days)
     coalitions = collect(combinations(clients))
-    # Calculating the imbalances
+    n_coalitions = length(coalitions)
+    
+    # Pre-fetch imbalance spread once to avoid repeated DataFrame access
+    imbalance_spread = tempData["price_prod_demand_df"][!, "ImbalanceSpreadEUR"]
+    n_intervals = length(imbalance_spread)
+    
+    # Pre-calculate CVaR parameters
+    cvar_index = max(1, ceil(Int, n_intervals * alpha))
+    
+    # Pre-allocate dictionaries with proper sizing to reduce hash table resizing
+    cvar_dict = Dict{Vector{String}, Float64}()
+    imbalanceDict = Dict{Vector{String}, Vector{Float64}}()
+    sizehint!(cvar_dict, n_coalitions)
+    sizehint!(imbalanceDict, n_coalitions)
+    
+    # Calculate imbalances - this is the major allocation source
     results, demandForecast, pvForecast = calculate_imbalance(tempData, clients)
-    imbalances = zeros(length(coalitions), length(pvForecast)) # Initialize the imbalance matrix
-    for (i, res) in enumerate(results)
-        # Calculate hourly imbalance for this coalition
-        interval_imbalance = get_imbalance(res.bids, res.scaled_pvProd, res.demand_sum)
-        imbalances[i, :] = interval_imbalance
+    
+    # Process each coalition individually to reduce peak memory usage
+    # This avoids creating a large n_coalitions × n_intervals matrix
+    for (i, coalition) in enumerate(coalitions)
+        res = results[i]
+        
+        # Calculate imbalance directly using vectorized operations
+        # This is more efficient than the get_imbalance function call
+        min_length = min(length(res.bids), length(res.scaled_pvProd), length(res.demand_sum))
+        interval_imbalance = res.bids[1:min_length] .+ res.scaled_pvProd[1:min_length] .- res.demand_sum[1:min_length]
+        
+        # Calculate costs in-place and find CVaR efficiently
+        # Use broadcasting to avoid creating intermediate arrays
+        imbalance_costs = interval_imbalance .* imbalance_spread[1:min_length]
+        
+        # Use partialsort! which is much more efficient than full sort for CVaR
+        # Only sort the top alpha% that we actually need
+        partialsort!(imbalance_costs, 1:cvar_index, rev=true)
+        cvar_value = sum(@view(imbalance_costs[1:cvar_index])) / cvar_index
+        
+        # Store results with proper types
+        cvar_dict[coalition] = cvar_value
+        imbalanceDict[coalition] = interval_imbalance
     end
     
-    imbalance_spread = tempData["price_prod_demand_df"][!, "ImbalanceSpreadEUR"]  # Get the imbalance spread from the DataFrame
-    # Calculate the CVaR for each coalition
-    cvar_array = zeros(length(coalitions))
-    for (i, coalition) in enumerate(coalitions)
-        imbalance_costs = imbalances[i, :] .* imbalance_spread  # Find the cost of the imbalances for this coalition
-        sorted_imbalance_costs = sort(imbalance_costs, rev=true)  # Sort in descending order (highest first)
-        n = length(sorted_imbalance_costs)
-        index = ceil(Int, n * alpha)  # Index for CVaR
-        cvar_value = mean(sorted_imbalance_costs[1:index])  # Average of the highest alpha% of imbalances
-        cvar_array[i] = cvar_value
-    end
-    # Convert the CVaR array to a dictionary for easier access
-    cvar_dict = Dict{Any, Float64}()
-    for (i, coalition) in enumerate(coalitions)
-        cvar_dict[coalition] = cvar_array[i]
-    end
-
-    # Convert imbalances to a dictionary for easier access
-    imbalanceDict = Dict{Any, Vector{Float64}}()
-    for (i, coalition) in enumerate(coalitions)
-        imbalanceDict[coalition] = imbalances[i, :]
-    end
-
     return cvar_dict, imbalanceDict, demandForecast, pvForecast
 end
 

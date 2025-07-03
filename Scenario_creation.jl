@@ -1,11 +1,12 @@
 include("Imbalance_functions.jl")
 
-function generate_scenarios_demand(clients, demandDF, start_hour; num_scenarios = 50, scen_length = 96)
+function generate_scenarios_demand(clients, demandDF, start_hour; num_scenarios = 50)
     # Find the index of the first value after the start_hour in the demandDF
     start_idx = findfirst(demandDF[:, :HourUTC_datetime] .> start_hour)
     if start_idx === nothing
         error("No value after start_hour $start_hour found in demandDF[:HourUTC_datetime]")
     end
+    scen_length = length(demandDF[1:start_idx, :HourUTC_datetime])  # Length of the historical data before start_hour
     # Filter the demandDF to only include data before the start_hour
     demandDF = demandDF[1:start_idx, :]
     
@@ -45,6 +46,28 @@ function generate_scenarios_demand(clients, demandDF, start_hour; num_scenarios 
     return scenarios_dict
 end
 
+function generate_scenarios_demand_rolling(clients, demandDF, start_hour, sim_days; num_scenarios = 5)
+    # Find the length of the data after the start_hour in the demandDF
+    start_idx = findfirst(demandDF[:, :HourUTC_datetime] .> start_hour)
+    if start_idx === nothing
+        error("No value after start_hour $start_hour found in demandDF[:HourUTC_datetime]")
+    end
+    scen_length = sim_days * 96  # 96 time steps per day, sim_days days
+    scenarios_dict = Dict()
+    scenario_offset = 96*7 # 96 time steps per day, 7 days in a week. 
+    for client in clients
+        # Initialize an array to store scenarios for the client
+        client_scenarios = zeros(scen_length, num_scenarios)
+        # Loop over the number of scenarios
+        for i in 1:num_scenarios
+            # Scenario i is the real data shifted by i weeks
+            client_scenarios[:, i] = demandDF[start_idx - i*scenario_offset : start_idx - i*scenario_offset + scen_length - 1, client]
+        end
+        scenarios_dict[client] = client_scenarios
+    end
+
+    return scenarios_dict
+end
 
 function generate_noise_forecast_PV(clients, systemData, start_hour, sim_days)
     standard_deviation = systemData["pv_noise_std"]

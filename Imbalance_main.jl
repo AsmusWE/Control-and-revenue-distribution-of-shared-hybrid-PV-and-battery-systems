@@ -18,7 +18,7 @@ Random.seed!(1) # Set seed for reproducibility
 # =========================
 # 1. Data Loading & Setup
 # =========================
-systemData, clients = load_data()
+systemData, clients, demandData = load_data()
 clients = filter(x -> x != "G", clients)
 #clients = filter(x -> !(x in ["W", "N", "V", "J", "O", "T"]), clients)
 #clients = filter(x -> !(x in ["L", "U"]), clients)
@@ -26,8 +26,8 @@ coalitions = collect(combinations(clients))
 
 # First hour 2024-03-04T12:00:00
 # Last hour 2025-04-26T03:45:00
-#start_hour = DateTime(2025, 4, 10, 0, 0, 0)
-start_hour = DateTime(2024, 3, 4, 12, 0, 0)
+#start_hour = DateTime(2025, 4, 19, 0, 0, 0)
+start_hour = DateTime(2025, 3, 6, 12, 0, 0)
 sim_days = 40
 num_scenarios = 5
 
@@ -35,20 +35,19 @@ alpha = 0.05 # CVaR alpha level
 
 
 # Accepted forecast types: "perfect", "scenarios", "noise"
-systemData["demand_forecast"] = "noise"
-systemData["pv_forecast"] = "noise"
+systemData["demand_forecast"] = "scenarios"
+systemData["pv_forecast"] = "scenarios"
 # Set standard deviations for noise
 # Adjusting so demand MAE is 7-10% and PV MAE is 22.5-25%
 systemData["demand_noise_std"] = 0.17
 systemData["pv_noise_std"] = 0.32
 
 if systemData["demand_forecast"] == "scenarios"
-    systemData["demand_scenarios"] = generate_scenarios_demand(clients, systemData["price_prod_demand_df"], start_hour; num_scenarios=num_scenarios)
+    systemData["demand_scenarios"] = generate_scenarios_demand_rolling(clients, demandData, start_hour, sim_days; num_scenarios=num_scenarios)
 end
 if systemData["pv_forecast"] == "noise"
     systemData["pv_forecast_noise"] = generate_noise_forecast_PV(clients, systemData, start_hour, sim_days)
 end
-
 
 
 allocations = [

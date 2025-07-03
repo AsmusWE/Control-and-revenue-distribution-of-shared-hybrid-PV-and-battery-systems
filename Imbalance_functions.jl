@@ -17,36 +17,37 @@ function optimize_imbalance(coalition, systemData)
     #TimeHorizon = intervals_per_day
     TimeHorizon = length(systemData["price_prod_demand_df"][!, "HourUTC_datetime"]) # Total number of 15-min intervals in the dataset
     first_hour = systemData["price_prod_demand_df"][1, "HourUTC_datetime"]
-    weekday = dayofweek(first_hour)  # 1=Monday, 7=Sunday
+    #weekday = dayofweek(first_hour)  # 1=Monday, 7=Sunday
     if systemData["demand_forecast"] == "perfect"
         # Demand forecast is perfect, use actual demand data
         demand = sum(systemData["price_prod_demand_df"][1:TimeHorizon, client] for client in coalition)
     elseif systemData["demand_forecast"] == "scenarios"
+        demand = sum(systemData["demand_scenarios"][client] for client in coalition)# Use the scenarios directly
         # Demand forecast is not perfect, use scenario data
         #demand = sum(systemData["demand_scenarios"][c,weekday] for c in coalition)
         # Demand forecast is not perfect, use scenario data
-        intervals_per_day = 96
-        days = ceil(Int, TimeHorizon / intervals_per_day)
+        #intervals_per_day = 96
+        #days = ceil(Int, TimeHorizon / intervals_per_day)
         
         # Initialize demand array
-        demand = zeros(TimeHorizon, size(systemData["demand_scenarios"][coalition[1], 1], 2))
+        #demand = zeros(TimeHorizon, size(systemData["demand_scenarios"][coalition[1], 1], 2))
         
-        for day in 1:days
-            # Calculate which weekday this is 
-            # Converts to 0 indexing, and then back to 1 indexing
-            current_weekday = mod(weekday -1 + day - 1, 7) + 1
-            
-            # Calculate interval range for this day
-            start_interval = (day - 1) * intervals_per_day + 1
-            end_interval = min(day * intervals_per_day, TimeHorizon)
-            actual_intervals = end_interval - start_interval + 1
-            
-            # Sum demand scenarios for all clients in coalition for this weekday
-            day_demand = sum(systemData["demand_scenarios"][c, current_weekday] for c in coalition)
-            
-            # Fill the demand array for this day (handle partial days)
-            demand[start_interval:end_interval, :] = day_demand[1:actual_intervals, :]
-        end
+        #for day in 1:days
+        #    # Calculate which weekday this is 
+        #    # Converts to 0 indexing, and then back to 1 indexing
+        #    current_weekday = mod(weekday -1 + day - 1, 7) + 1
+        #    
+        #    # Calculate interval range for this day
+        #    start_interval = (day - 1) * intervals_per_day + 1
+        #    end_interval = min(day * intervals_per_day, TimeHorizon)
+        #    actual_intervals = end_interval - start_interval + 1
+        #    
+        #    # Sum demand scenarios for all clients in coalition for this weekday
+        #    day_demand = sum(systemData["demand_scenarios"][c, current_weekday] for c in coalition)
+        #    
+        #    # Fill the demand array for this day (handle partial days)
+        #    demand[start_interval:end_interval, :] = day_demand[1:actual_intervals, :]
+        #end
     elseif systemData["demand_forecast"] == "noise"
         # Forecast is set as the actual demand with added noise
         standard_deviation = systemData["demand_noise_std"]

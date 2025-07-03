@@ -53,8 +53,7 @@ function load_data()
     # --- Filter combined data to include only clients without missing data ---
     combinedData = select(combinedData, Cols(:HourUTC_datetime, :SolarMWh, clients_without_missing_data..., :PVForecast))
 
-    # --- Change to 15 minute resolution ---
-    # Expand each row to 4 rows (15-minute intervals), dividing values by 4
+    # --- Change to 15 minute resolution for combinedData ---
     value_cols = names(combinedData, Not(:HourUTC_datetime))
     N = nrow(combinedData)
     repeats = 4
@@ -66,6 +65,15 @@ function load_data()
     expanded[:, value_cols] .= expanded[:, value_cols] ./ 4
     combinedData = expanded
     sort!(combinedData, :HourUTC_datetime)
+
+    # --- Change demand to 15 minute resolution in the same way ---
+    demand_value_cols = names(demand, Not([:HourUTC_datetime, :Z]))
+    N_demand = nrow(demand)
+    expanded_demand = demand[repeat(1:N_demand, inner=repeats), :]
+    expanded_demand.:HourUTC_datetime .+= Minute.(15 .* repeat(0:3, outer=N_demand))
+    expanded_demand[:, demand_value_cols] .= expanded_demand[:, demand_value_cols] ./ 4
+    demand = expanded_demand
+    sort!(demand, :HourUTC_datetime)
 
     # --- Add price data ---
     priceData = CSV.read("Data/ImbalancePrice.csv", DataFrame, decimal=',')
@@ -84,6 +92,6 @@ function load_data()
         #"clients" => clients,
         "price_prod_demand_df" => combinedData
     )
-    return systemData, clients_without_missing_data
+    return systemData, clients_without_missing_data, demand
 end
 

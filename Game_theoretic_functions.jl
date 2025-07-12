@@ -5,7 +5,7 @@ using Combinatorics, HiGHS, JuMP#, Gurobi, NLsolve,
 
 
 function calculate_allocations(
-    allocations, clients, coalitions, coalitionCVaR, hourly_imbalances, systemData; printing = true
+    allocations, clients, coalitions, coalitionCVaR, hourly_imbalances, systemData, alpha; printing = true
     )
     allocation_costs = Dict{String, Any}()
     allocation_map = Dict(
@@ -22,7 +22,8 @@ function calculate_allocations(
             _, nucleolus_values = nucleolus(clients, coalitionCVaR)
             deepcopy(nucleolus_values)
         end,
-        "equal_share" => () -> deepcopy(equal_allocation(clients, coalitionCVaR))
+        "equal_share" => () -> deepcopy(equal_allocation(clients, coalitionCVaR)),
+        "cost_based" => () -> deepcopy(cost_based_allocation(clients, hourly_imbalances, systemData, alpha))
     )
     allocation_print_map = Dict(
         "shapley" => "Shapley calculation time:",
@@ -34,7 +35,8 @@ function calculate_allocations(
         "full_cost" => "Full cost transfer calculation time:",
         "reduced_cost" => "reduced cost calculation time:",
         "nucleolus" => "Nucleolus calculation time:",
-        "equal_share" => "Equal share calculation time:"
+        "equal_share" => "Equal share calculation time:",
+        "cost_based" => "Cost based allocation calculation time:"
     )
     for allocation in allocations
         if haskey(allocation_map, allocation)
@@ -72,7 +74,7 @@ function allocation_variance(
         println("Calculating allocations for day $day")
         imbalances_day, interval_imbalances_day = period_imbalance(systemData, clients, curr_interval, 1; threads = false, printing = false)
         daily_allocations = calculate_allocations(
-            allocations, clients, coalitions, imbalances_day, interval_imbalances_day, systemData; printing = false
+            allocations, clients, coalitions, imbalances_day, interval_imbalances_day, systemData, 0.05; printing = false
         )
         # Extracting allocations and adding them to total client allocation
         for allocation in allocations
@@ -373,7 +375,7 @@ function nucleolus(clients, imbalances)
     
     # Build coalition indices and imbalances vector more efficiently
     imbalances_vec = Vector{Float64}(undef, n_coalitions)
-    
+    GC.gc()  # Force garbage collection to reduce memory fragmentation
     for (i, coalition) in enumerate(coalitions)
         # Convert client names to indices for faster constraint building
         coalition_indices[i] = [client_to_idx[client] for client in coalition]
@@ -403,7 +405,7 @@ function nucleolus(clients, imbalances)
         iteration += 1
         
         try
-            max_excess, new_locked_indices, new_payments = nucleolus_optimize_fast(
+            max_excess, new_locked_indices, new_payments = nucleolus_optimize(
                 n_clients, imbalances_vec, locked_status, locked_values, 
                 coalition_indices, grand_coalition_idx
             )
@@ -452,23 +454,23 @@ function nucleolus(clients, imbalances)
     return locked_dict, payments
 end
 
-function nucleolus_optimize_fast(n_clients, imbalances_vec, locked_status, locked_values, 
+function nucleolus_optimize(n_clients, imbalances_vec, locked_status, locked_values, 
                                 coalition_indices, grand_coalition_idx)
     n_coalitions = length(coalition_indices)
     
-    # Create model with optimized settings
+    # Create model
     model = Model(HiGHS.Optimizer)
     set_silent(model)
     
     # Set HiGHS-specific parameters for better performance
-    set_optimizer_attribute(model, "presolve", "on")
-    set_optimizer_attribute(model, "parallel", "on")
+    #set_optimizer_attribute(model, "presolve", "on")
+    #set_optimizer_attribute(model, "parallel", "on")
     
     @variable(model, payment[1:n_clients])
     @variable(model, max_excess)
     @objective(model, Min, max_excess)
     
-    # Build constraints more efficiently using pre-computed indices
+    # Precomputing unlocked coalitions
     unlocked_coalitions = findall(i -> !locked_status[i] && i != grand_coalition_idx, 1:n_coalitions)
     
     # Excess constraints only for unlocked coalitions (excluding grand coalition)
@@ -491,7 +493,7 @@ function nucleolus_optimize_fast(n_clients, imbalances_vec, locked_status, locke
         
         # Find coalitions that achieve maximum excess
         new_locked_indices = Int[]
-        tol = 1e-8  # Slightly tighter tolerance for better numerical stability
+        tol = 1e-8 
         
         for i in unlocked_coalitions
             excess_val = sum(payment_values[j] for j in coalition_indices[i]) - imbalances_vec[i]
@@ -517,4 +519,49 @@ function equal_allocation(clients, imbalances)
         equal_allocation[client] = imbalances[[client]] * imbalance_factor
     end
     return equal_allocation
+end
+
+function cost_based_allocation(clients, hourly_imbalances, systemData, alpha)
+    # This function calculates the cost-based allocation for each client in the grand coalition
+    # Allocation is based on the cost clients add in the imbalance tail
+    allocation = Dict{String, Float64}()
+    
+    # Get pricing data - ensure it matches the period of hourly_imbalances
+    full_imbalance_spread = systemData["price_prod_demand_df"][!, "ImbalanceSpreadEUR"]
+    grand_coalition_imbalances = hourly_imbalances[clients]
+    T = length(grand_coalition_imbalances)
+    
+    # If systemData has been trimmed to match the analysis period, use it directly
+    # Otherwise, we need to assume the periods are aligned (this should be fixed at the caller level)
+    if length(full_imbalance_spread) == T
+        imbalance_spread = full_imbalance_spread
+    else
+        # Fallback: assume we need the first T periods (not ideal, but prevents crashes)
+        # TODO: This should be fixed by passing the correct trimmed systemData
+        @warn "Dimension mismatch detected. Using first $T periods of imbalance spread. This may cause temporal misalignment."
+        imbalance_spread = full_imbalance_spread[1:min(T, length(full_imbalance_spread))]
+        
+        # If we still don't have enough data, pad with the last available value
+        if length(imbalance_spread) < T
+            last_spread = isempty(imbalance_spread) ? 0.0 : imbalance_spread[end]
+            imbalance_spread = vcat(imbalance_spread, fill(last_spread, T - length(imbalance_spread)))
+        end
+    end
+    
+    # Calculate costs (or gains) for each time period
+    grand_coalition_costs = grand_coalition_imbalances .* imbalance_spread
+    # Calculate CVaR tail indices (highest cost periods)
+    n_tail = ceil(Int, T * alpha)  # Number of periods in the CVaR tail
+    
+    # Get indices of the worst (highest cost) periods 
+    cost_indices = partialsortperm(grand_coalition_costs, 1:n_tail, rev=true)
+    # Get costs for the worst periods
+    indiced_spreads = view(imbalance_spread, cost_indices)
+    # Calculate average cost contribution for each client 
+    for client in clients
+        client_imbalances = view(hourly_imbalances[[client]], cost_indices)
+        allocation[client] = sum(client_imbalances .* indiced_spreads) / n_tail
+    end
+    
+    return allocation
 end

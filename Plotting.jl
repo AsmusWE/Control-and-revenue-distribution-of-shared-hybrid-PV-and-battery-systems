@@ -41,7 +41,8 @@ function plot_results(
         "full_cost" => ("Full Cost", :pink),
         "reduced_cost" => ("Reduced Cost", :lightblue),
         "nucleolus" => ("Nucleolus", :green),
-        "equal_share" => ("Equal Share", :purple)
+        "equal_share" => ("Equal Share", :purple),
+        "cost_based" => ("Cost Based", :cyan)
     )
 
     # CVaR per MWh
@@ -51,7 +52,8 @@ function plot_results(
             cost_MWh[alloc] = scale_distribution!(allocation_costs[alloc], dayData["price_prod_demand_df"], clients)
         end
     end
-    p_fees_MWh = plot(title="CVaR per MWh demand", xlabel="Client", ylabel="CVaR/MWh [(€/15min)/MWh]", xticks=(1:length(plotKeys), plotKeys), xrotation=45)
+    yMax =maximum([maximum(cost_MWh[alloc][k] for k in plotKeys) for alloc in allocations if haskey(cost_MWh, alloc)])
+    p_fees_MWh = plot(title="CVaR per MWh demand", xlabel="Client", ylabel="CVaR/MWh [(€/15min)/MWh]", xticks=(1:length(plotKeys), plotKeys), xrotation=45, ylim = (0, yMax * 1.1))
     for alloc in allocations
         if haskey(cost_MWh, alloc)
             label, color = allocation_labels[alloc]
@@ -73,7 +75,8 @@ function plot_results(
         title="CVaR per MWh vs PV Coverage",
         xlabel="PV Coverage of Demand [%]",
         ylabel="CVaR/MWh [(€/15min)/MWh]",
-        legend=:topright
+        legend=:bottomright,
+        ylim = (0, yMax * 1.1),
     )
     
     for alloc in allocations
@@ -134,7 +137,7 @@ function plot_results(
         title="CVaR Ratio vs PV Coverage",
         xlabel="PV Coverage of Demand [%]",
         ylabel="CVaR Contribution / Individual CVaR [%]",
-        legend=:topright,
+        legend=:bottomright,
         ylim = (0, 100)
     )
     

@@ -11,7 +11,7 @@ include("Plotting.jl")
 
 # --- External Packages ---
 using Plots, Dates, Random, Combinatorics, StatsPlots, Serialization
-
+GC.gc() # Run garbage collection to free memory, useful for repeat runs
 
 Random.seed!(1) # Set seed for reproducibility
 
@@ -20,7 +20,7 @@ Random.seed!(1) # Set seed for reproducibility
 # =========================
 systemData, clients, demandData = load_data()
 clients = filter(x -> x != "G", clients)
-#clients = filter(x -> !(x in ["W", "N", "V", "J", "O", "T"]), clients)
+clients = filter(x -> !(x in ["W", "N", "V", "J"]), clients)
 #clients = filter(x -> !(x in ["L", "U"]), clients)
 coalitions = collect(combinations(clients))
 
@@ -28,7 +28,7 @@ coalitions = collect(combinations(clients))
 # Last hour 2025-04-26T03:45:00
 #start_hour = DateTime(2025, 4, 19, 0, 0, 0)
 start_hour = DateTime(2025, 3, 6, 12, 0, 0)
-sim_days = 40
+sim_days = 50
 num_scenarios = 5
 
 alpha = 0.05 # CVaR alpha level
@@ -39,6 +39,7 @@ systemData["demand_forecast"] = "scenarios"
 systemData["pv_forecast"] = "scenarios"
 # Set standard deviations for noise
 # Adjusting so demand MAE is 7-10% and PV MAE is 22.5-25%
+# Note: PV forecast gives MAE of 22.5-25% using scenarios
 systemData["demand_noise_std"] = 0.17
 systemData["pv_noise_std"] = 0.32
 
@@ -48,6 +49,9 @@ end
 if systemData["pv_forecast"] == "noise"
     systemData["pv_forecast_noise"] = generate_noise_forecast_PV(clients, systemData, start_hour, sim_days)
 end
+
+# Cut systemData to the simulation period
+systemData = set_period!(systemData, start_hour, sim_days)
 
 
 allocations = [
@@ -59,27 +63,28 @@ allocations = [
     #"gately_interval",
     #"full_cost",
     #"reduced_cost",
-    #"nucleolus",
-    #"equal_share"
+    "nucleolus",
+    #"equal_share",
+    "cost_based"
 ]
 
 # =========================
 # 2. Imbalance Calculation and allocation
 # =========================
 # Calculating CVaR
-println("Calculating CVaR for coalitions...")
-coalitionCVaR, imbalances, demandForecast, pvForecast = @time calculate_CVaR(systemData, clients, start_hour, sim_days; alpha=alpha)
+coalitionCVaR, imbalances = @time calculate_CVaR(systemData, clients, start_hour, sim_days; printing=true ,alpha=alpha)
 
 # Checking MAE
-MAE_demand, MAE_pv = calculate_MAE(systemData, demandForecast, pvForecast, clients, start_hour, sim_days)
-println("MAE Demand: ", MAE_demand)
-println("MAE PV: ", MAE_pv)
+#MAE_demand, MAE_pv = calculate_MAE(systemData, demandForecast, pvForecast, clients, start_hour, sim_days)
+#println("MAE Demand: ", MAE_demand)
+#println("MAE PV: ", MAE_pv)
 
 # Calculating allocations
 println("Calculating allocations...")
 #daily_cost_MWh_imbalance, allocation_costs, imbalances, hourly_imbalances = @time allocation_variance(allocations, clients, coalitions, systemData, start_hour, sim_days)
+
 allocation_costs = calculate_allocations(
-    allocations, clients, coalitions, coalitionCVaR, 0, systemData; printing = true
+    allocations, clients, coalitions, coalitionCVaR, imbalances, systemData, alpha; printing = true
     )
 
 
@@ -152,5 +157,6 @@ plot_results(
 #    outliers = false
 #)
 
+GC.gc() # Run garbage collection to free memory after processing
 
 

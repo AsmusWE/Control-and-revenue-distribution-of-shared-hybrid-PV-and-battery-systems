@@ -245,7 +245,7 @@ function calculate_CVaR(systemData, clients, startDay, days; alpha=0.05, threads
     cvar_array = zeros(length(coalitions))
     n = intervals
     index = ceil(Int, n * alpha)  # Index for VaR
-    println("Calculating CVaR for coalitions with alpha = ", alpha, " (top ", index, " of ", n, ")")
+
     for (i, coalition) in enumerate(coalitions)
         imbalances = period_interval_imbalance[i, :] .* imbalance_spread  # Find the cost of the imbalances for this coalition
         partialsort!(imbalances, 1:index, rev=true)  # In-place partial sort

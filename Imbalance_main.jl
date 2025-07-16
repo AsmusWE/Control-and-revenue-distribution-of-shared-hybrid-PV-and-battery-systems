@@ -8,6 +8,7 @@ include("Scenario_creation.jl")
 include("imbalance_functions.jl")
 include("Game_theoretic_functions.jl")
 include("Plotting.jl")
+include("Timing_functions.jl")
 
 # --- External Packages ---
 using Plots, Dates, Random, Combinatorics, StatsPlots, Serialization
@@ -30,7 +31,7 @@ coalitions = collect(combinations(clients))
 start_hour = DateTime(2025, 3, 6, 12, 0, 0)
 #start_hour = start_hour + Dates.Day(3) # Start at 00:00 of the next day
 #sim_days = 50
-sim_days = 50
+sim_days = 1
 num_scenarios = 5
 
 alpha = 0.05 # CVaR alpha level
@@ -75,7 +76,12 @@ allocations = [
 # =========================
 # Calculating CVaR
 println("Calculating CVaR for all coalitions...")
-coalitionCVaR, imbalances = @time calculate_CVaR(systemData, clients, start_hour, sim_days; printing=true ,alpha=alpha)
+coalitionCVaR, imbalances = @time calculate_CVaR(systemData, clients, start_hour, sim_days; printing=false ,alpha=alpha)
+# NOTE: Only time one of these at a time, otherwise the last call will always be faster
+#println("Timing CVaR for gately")
+#_ = @time CVaR_Gately(systemData, clients, start_hour, sim_days; printing=false, alpha=alpha)
+#println("Timing CVaR for VCG")
+#_ = @time CVaR_VCG(systemData, clients, start_hour, sim_days; printing=false, alpha=alpha)
 
 # Checking MAE
 #MAE_demand, MAE_pv = calculate_MAE(systemData, demandForecast, pvForecast, clients, start_hour, sim_days)

@@ -12,7 +12,7 @@ function calculate_allocations(
         "shapley" => () -> shapley_value(clients, coalitions, coalitionCVaR),
         #"VCG" => () -> VCG_tax(clients, coalitionCVaR, hourly_imbalances, systemData; budget_balance=false),
         "VCG" => () -> simple_VCG(clients, coalitionCVaR),
-        "VCG_budget_balanced" => () -> VCG_tax(clients, coalitionCVaR, hourly_imbalances, systemData; budget_balance=true),
+        "VCG_budget_balanced" => () -> VCG_BB(clients, coalitionCVaR),
         "gately" => () -> deepcopy(gately_point(clients, coalitionCVaR)),
         #"gately_daily" => () -> deepcopy(gately_point_daily(clients, hourly_imbalances, systemData)),
         "gately_interval" => () -> deepcopy(gately_point_interval(clients, hourly_imbalances, systemData)),
@@ -23,7 +23,7 @@ function calculate_allocations(
             deepcopy(nucleolus_values)
         end,
         "equal_share" => () -> deepcopy(equal_allocation(clients, coalitionCVaR)),
-        "cost_based" => () -> deepcopy(cost_based_allocation(clients, hourly_imbalances, systemData, alpha))
+        "cost_based" => () -> deepcopy(cost_based_allocation(clients, hourly_imbalances, systemData, alpha)),
     )
     allocation_print_map = Dict(
         "shapley" => "Shapley calculation time:",
@@ -155,6 +155,39 @@ function simple_VCG(clients, coalitionCVaR)
         utilities[client] = VCG_value
     end
     return utilities
+end
+
+function VCG_BB(clients, coalitionCVaR)
+    # This function calculates the VCG value for each client in the grand coalition
+    # Handles budget balanced case by optimizing
+    vcg_payments = simple_VCG(clients, coalitionCVaR)
+
+    model = Model(HiGHS.Optimizer)
+    set_silent(model)
+
+    @variable(model, payment[clients])
+    
+    # Objective is to minimize the squared relative difference from VCG payments
+    @objective(model, Min, sum(((vcg_payments[client] - payment[client])/vcg_payments[client])^2 for client in clients))
+    
+    # Constraint to ensure budget balance
+    @constraint(model, sum(payment) == coalitionCVaR[clients])
+
+    # Constraints to ensure individual rationality
+    @constraint(model, [client in clients],
+                payment[client] <= coalitionCVaR[[client]]) # Payments must be lower than solo payment
+    
+    optimize!(model)
+
+    if termination_status(model) != MOI.OPTIMAL
+        error("VCG budget balanced optimization failed: $(termination_status(model))")
+    end
+    optimized_payments = Dict{String, Float64}()
+    for client in clients
+        optimized_payments[client] = value(payment[client])
+    end
+
+    return optimized_payments
 end
 
 function VCG_tax(clients, imbalance_costs, hourly_imbalances, systemData; budget_balance=false)

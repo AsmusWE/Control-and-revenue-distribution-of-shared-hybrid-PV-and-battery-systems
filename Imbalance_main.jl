@@ -28,6 +28,8 @@ coalitions = collect(combinations(clients))
 # Last hour 2025-04-26T03:45:00
 #start_hour = DateTime(2025, 4, 19, 0, 0, 0)
 start_hour = DateTime(2025, 3, 6, 12, 0, 0)
+#start_hour = start_hour + Dates.Day(3) # Start at 00:00 of the next day
+#sim_days = 50
 sim_days = 50
 num_scenarios = 5
 
@@ -57,13 +59,13 @@ systemData = set_period!(systemData, start_hour, sim_days)
 allocations = [
     "shapley",
     "VCG",
-    #"VCG_budget_balanced",
+    "VCG_budget_balanced",
     "gately",
     #"gately_daily",
     #"gately_interval",
     #"full_cost",
     #"reduced_cost",
-    "nucleolus",
+    #"nucleolus",
     #"equal_share",
     "cost_based"
 ]
@@ -72,6 +74,7 @@ allocations = [
 # 2. Imbalance Calculation and allocation
 # =========================
 # Calculating CVaR
+println("Calculating CVaR for all coalitions...")
 coalitionCVaR, imbalances = @time calculate_CVaR(systemData, clients, start_hour, sim_days; printing=true ,alpha=alpha)
 
 # Checking MAE

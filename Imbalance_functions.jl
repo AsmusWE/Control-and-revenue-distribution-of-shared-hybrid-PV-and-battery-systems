@@ -248,7 +248,6 @@ function calculate_CVaR(systemData, clients, startDay, days; alpha=0.05, threads
     println("Calculating CVaR for coalitions with alpha = ", alpha, " (top ", index, " of ", n, ")")
     for (i, coalition) in enumerate(coalitions)
         imbalances = period_interval_imbalance[i, :] .* imbalance_spread  # Find the cost of the imbalances for this coalition
-        # Use partialsort! for better performance - only sort the top α% values
         partialsort!(imbalances, 1:index, rev=true)  # In-place partial sort
         cvar_value = mean(imbalances[1:index])  # Average of the highest alpha% of imbalances
         cvar_array[i] = cvar_value
@@ -257,11 +256,11 @@ function calculate_CVaR(systemData, clients, startDay, days; alpha=0.05, threads
     cvar_dict = Dict{Any, Float64}()
     imbalance_dict = Dict{Any, Vector{Float64}}()
     
-    # Pre-allocate dictionaries with correct size
+    # Preallocate the dictionaries to avoid resizing during insertion
     sizehint!(cvar_dict, length(coalitions))
     sizehint!(imbalance_dict, length(coalitions))
     
-    # Use views instead of copying data to avoid memory allocation
+    # Fill the dictionaries with the CVaR values and the corresponding imbalances
     for (i, coalition) in enumerate(coalitions)
         cvar_dict[coalition] = cvar_array[i]
         imbalance_dict[coalition] = view(period_interval_imbalance, i, :)

@@ -80,6 +80,19 @@ coalition_costs, coalition_imbalances = calculate_total_costs_specific(
 println("Total grand-coalition cost: ", coalition_costs[grand_coalition])
 flush(stdout)
 
+# Sanity check: the newsvendor optimal bidding quantile (cost_up / (cost_up + cost_down)) is
+# shared across all coalitions inside newsvendor_bidding -- it does not vary with coalition
+# membership, only with the imbalance-spread scenarios. Report it for the grand coalition here
+# as a diagnostic (expected in (0, 1); values far from 0.5 indicate a strongly asymmetric
+# up/down imbalance price spread).
+if use_newsvendor
+    _, optimal_bidding_quantile_grand = newsvendor_bidding(
+        [grand_coalition], system_data, stochastic_data; one_price = false, return_quantile = true
+    )
+    println("Optimal bidding quantile (grand coalition): ", round(optimal_bidding_quantile_grand, digits=4))
+    flush(stdout)
+end
+
 # =========================
 # 3. Per-hour primitives shared by Checks 1 & 2
 # =========================

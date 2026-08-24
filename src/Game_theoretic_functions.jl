@@ -7,7 +7,10 @@ using Combinatorics, HiGHS, JuMP, LinearAlgebra, Serialization#, NLsolve,
 # opposed the coalition's net imbalance in a given hour can legitimately receive a net
 # subsidy (a positive value) rather than a cost.
 function calculate_allocations(
-    allocations, clients, coalition_costs, coalition_imbalances, system_data; printing = true, return_time = false
+    allocations, clients, coalition_costs, coalition_imbalances, system_data;
+    printing = true, return_time = false,
+    nucleolus_checkpoint_path::Union{Nothing, AbstractString} = nothing,
+    nucleolus_checkpoint_every::Int = 50
     )
     allocation_times = Dict{String, Float64}()
     allocation_costs = Dict{String, Any}()
@@ -21,7 +24,8 @@ function calculate_allocations(
         "marginal_price" => () -> deepcopy(marginal_price_allocation(clients, coalition_imbalances, system_data)),
         "reduced_cost" => () -> deepcopy(reduced_cost_allocation(clients, coalition_imbalances, system_data)),
         "nucleolus" => () -> begin
-            _, nucleolus_values = nucleolus(clients, coalition_costs)
+            _, nucleolus_values = nucleolus(clients, coalition_costs;
+                checkpoint_path = nucleolus_checkpoint_path, checkpoint_every = nucleolus_checkpoint_every)
             deepcopy(nucleolus_values)
         end,
         "equal_share" => () -> deepcopy(equal_share_allocation(clients, coalition_costs)),

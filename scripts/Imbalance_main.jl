@@ -104,8 +104,18 @@ for (batch_idx, batch_start) in enumerate(1:coalition_batch_size:length(coalitio
     end
 end
 
+
+# Nucleolus checkpoint: reused across resubmissions of the same job so a run that hits the
+# HPC wall-time limit resumes instead of restarting from scratch. Tied to file_name since that's
+# what already identifies this run's configuration; delete this file to force a clean nucleolus
+# recompute (e.g. after changing clients, the simulation period, or anything else that changes
+# coalition_costs -- resuming with a stale checkpoint against different coalition costs would
+# silently produce a wrong answer).
+nucleolus_checkpoint_path = joinpath(@__DIR__, "..", "results", "cache", splitext(file_name)[1] * "_nucleolus_checkpoint.jls")
+
 allocation_costs = calculate_allocations(
-    allocations, clients, coalition_costs, coalition_imbalances, system_data; printing = false
+    allocations, clients, coalition_costs, coalition_imbalances, system_data; printing = false,
+    nucleolus_checkpoint_path = nucleolus_checkpoint_path
 )
 
 println("Total costs: ", coalition_costs[clients])

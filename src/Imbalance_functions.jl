@@ -117,7 +117,7 @@ function optimize_imbalance(coalition, system_data, stochastic_data; extended_ou
     end
 end
 
-function newsvendor_bidding(coalitions, system_data, stochastic_data; one_price = false)
+function newsvendor_bidding(coalitions, system_data, stochastic_data; one_price = false, return_quantile = false)
     # Process all coalitions at once to avoid redundant data handling
     time_horizon = length(system_data["price_prod_demand_df"][!, "HourUTC_datetime"])
     T = min(time_horizon, size(system_data["price_prod_demand_df"])[1])
@@ -153,6 +153,9 @@ function newsvendor_bidding(coalitions, system_data, stochastic_data; one_price 
         bids[coalition] = [quantile(net_consumption_scenarios[t, :], optimal_bidding_quantile) for t in 1:T]
     end
 
+    if return_quantile
+        return bids, optimal_bidding_quantile
+    end
     return bids
 end
 

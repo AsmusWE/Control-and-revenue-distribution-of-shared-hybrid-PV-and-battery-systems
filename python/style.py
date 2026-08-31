@@ -88,9 +88,14 @@ def save_figure(fig, name, dpi=200, pgf_width_in=None):
     orig_hspace = fig.subplotpars.hspace
     orig_wspace = fig.subplotpars.wspace
     pgf_height = pgf_width_in * orig_size[1] / orig_size[0]
+    # A figure may request a tighter outer padding than the default (1.08) -- e.g. the
+    # p_cost_ratio grid sets _tight_layout_pad to pull its figure-level supylabel closer
+    # to the y-axis tick labels. Honor it here so the .pgf re-layout matches the on-screen
+    # figure; figures without the attribute keep the default behavior.
+    tl_pad = getattr(fig, "_tight_layout_pad", 1.08)
     try:
         fig.set_size_inches(pgf_width_in, pgf_height)
-        fig.tight_layout()
+        fig.tight_layout(pad=tl_pad)
         # tight_layout() recomputes hspace/wspace from scratch, clobbering any custom
         # subplot spacing (e.g. hspace=0 for stacked, axis-sharing panels) a figure function
         # set intentionally -- restore it after tight_layout has fixed up the outer margins.

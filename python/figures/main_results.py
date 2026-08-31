@@ -77,7 +77,7 @@ def plot_results(
     client_name_mapping = create_alphabetic_client_mapping(clients)
     plot_keys_alphabetic = [client_name_mapping[c] for c in plot_keys]
 
-    skip_allocations = {"VCG", "nucleolus"}
+    skip_allocations = {"VCG"}
     # Order taken from the `allocations` argument (deterministic) rather than Julia's
     # unspecified Dict iteration order, restricted to allocations we actually have costs for.
     allocations = [a for a in allocations if a in allocation_costs and a not in skip_allocations]
@@ -176,10 +176,11 @@ def plot_results(
     # Size the grid to the number of panels actually needed (rather than a fixed 3x2) so
     # there's no empty hidden row reserving blank space -- that blank space gets cropped
     # out of the .png by save_figure's bbox_inches="tight" but not out of the .pgf, which
-    # must keep its exact physical width for figure* and so cannot be cropped after the fact.
-    n_cols = 2
+    # must keep its exact physical width for a single-column `figure` and so cannot be
+    # cropped after the fact. One column wide: the allocation panels stack vertically.
+    n_cols = 1
     n_rows = -(-len(grid_allocations) // n_cols)  # ceil division
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 10 / 3 * n_rows * 0.9 * 0.8))
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 10 / 3 * n_rows * 0.9 * 0.8), sharex=True)
     axes2d = np.asarray(axes).reshape(n_rows, n_cols)
     # 3/4 the default marker diameter (matplotlib's default scatter size is
     # rcParams['lines.markersize'] ** 2 = 36; scatter's `s` is area, so diameter scaling
@@ -222,7 +223,13 @@ def plot_results(
     # supylabel must exist before tight_layout() so its width is accounted for in the
     # left margin -- adding it afterwards leaves it overlapping the left column's ticks.
     fig.supylabel("Consumer Allocation Ratio [%]")
-    fig.tight_layout()
+    # Default tight_layout pad (1.08 x font size ~= 0.15 in) is applied twice in the left
+    # margin here -- once before the y-tick labels, once between them and the supylabel --
+    # which leaves a wide gap between the supylabel and the plots. A tighter pad pulls the
+    # supylabel (anchored at the far left) close to the y-axis ticks without crowding them.
+    # Stored on the figure so style.save_figure's .pgf re-layout uses the same pad.
+    fig._tight_layout_pad = 0.4
+    fig.tight_layout(pad=fig._tight_layout_pad)
     fig.subplots_adjust(hspace=0.08)
     figures["p_cost_ratio"] = fig
 

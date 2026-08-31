@@ -30,13 +30,8 @@ from data_io import (
 )
 from figures import gains_of_aggregation, main_results, pv_coverage, socialized_vs_individualized
 
-# Cache file (see results/cache/, produced by scripts/Imbalance_main.jl) to drive the main
-# results figures and the "gains of aggregation" figure. Matches Plotting_main.jl's
-# `22ClientMonthly.jls` and Gains_Of_Aggregation.jl's `17ClientWeekly.jls`. Only
-# 22ClientMonthly is guaranteed present out of the box; re-run Imbalance_main.jl with a
-# different `file_name`/client set and re-export to point this at a different cache.
-MAIN_CACHE_NAME = "AllClientMonthly"
-GAINS_CACHE_NAME = "AllClientMonthly"
+MAIN_CACHE_NAME = "AllClientMonthlyNucleolus"
+GAINS_CACHE_NAME = "AllClientMonthlyNucleolus"
 
 PLOTTED_ALLOCATIONS = [
     "shapley",
@@ -45,6 +40,7 @@ PLOTTED_ALLOCATIONS = [
     "gately",
     "marginal_price",
     "flat_rate",
+    "nucleolus"
 ]
 
 ALLOCATION_LABELS = {
@@ -63,7 +59,7 @@ ALLOCATION_LABELS = {
 
 # Figures wide enough (e.g. a multi-panel grid) to warrant a `figure*` (both columns) in
 # the paper, rather than a single-column `figure`.
-WIDE_FIGURES = {"p_cost_ratio"}
+WIDE_FIGURES = set()
 
 
 def _save_all(figures: dict, prefix: str = ""):
